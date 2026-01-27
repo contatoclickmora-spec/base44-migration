@@ -2,6 +2,7 @@ import AdminMaster from './pages/AdminMaster';
 import AprovacaoMoradores from './pages/AprovacaoMoradores';
 import Assinatura from './pages/Assinatura';
 import AuditoriaAlteracoes from './pages/AuditoriaAlteracoes';
+import Auth from './pages/Auth';
 import AvisosMorador from './pages/AvisosMorador';
 import ChamadosPortaria from './pages/ChamadosPortaria';
 import ComoUsar from './pages/ComoUsar';
@@ -49,6 +50,7 @@ export const PAGES = {
     "AprovacaoMoradores": AprovacaoMoradores,
     "Assinatura": Assinatura,
     "AuditoriaAlteracoes": AuditoriaAlteracoes,
+    "Auth": Auth,
     "AvisosMorador": AvisosMorador,
     "ChamadosPortaria": ChamadosPortaria,
     "ComoUsar": ComoUsar,

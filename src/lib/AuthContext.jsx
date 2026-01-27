@@ -83,13 +83,12 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
     
     if (shouldRedirect) {
-      window.location.href = '/';
+      window.location.href = '/Auth';
     }
   };
 
   const navigateToLogin = () => {
-    // For now, just redirect to root - implement login page later
-    window.location.href = '/';
+    window.location.href = '/Auth';
   };
 
   return (

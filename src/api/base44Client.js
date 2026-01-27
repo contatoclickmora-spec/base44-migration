@@ -54,8 +54,8 @@ export const base44 = {
       await supabase.auth.signOut();
     },
     async redirectToLogin(returnUrl) {
-      // For now just redirect to root - implement proper login page later
-      window.location.href = returnUrl || '/';
+      const redirectParam = returnUrl ? `?redirect=${encodeURIComponent(returnUrl)}` : '';
+      window.location.href = `/Auth${redirectParam}`;
     }
   },
   entities: {
