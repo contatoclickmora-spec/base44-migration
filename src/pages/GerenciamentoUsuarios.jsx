@@ -334,32 +334,30 @@ export default function GerenciamentoUsuarios({ userType }) {
         
         let targetUserId = null;
         
-        // Buscar todos os profiles e roles para comparar
-        const [profilesResult, rolesResult] = await Promise.all([
-          supabase.from('profiles').select('user_id, nome').limit(200),
-          supabase.from('user_roles').select('user_id, condominio_id')
-        ]);
+        // Buscar user_id pelo email usando a função RPC segura
+        const { data: userIdByEmail, error: rpcError } = await supabase
+          .rpc('get_user_id_by_email', { _email: emailNormalizado });
         
-        const existingProfiles = profilesResult.data || [];
-        const existingRoles = rolesResult.data || [];
-        
-        // Criar set de user_ids que já têm role no condomínio selecionado
-        const usersWithRolesInCondominio = new Set(
-          existingRoles
-            .filter(r => r.condominio_id === dados.usuario.condominio_id)
-            .map(r => r.user_id)
-        );
-        
-        // Encontrar profile sem role no condomínio atual
-        const profileSemRole = existingProfiles.find(p => !usersWithRolesInCondominio.has(p.user_id));
-        
-        if (profileSemRole) {
-          targetUserId = profileSemRole.user_id;
-          console.log("✅ Encontrado usuário sem role no condomínio:", profileSemRole.nome);
-        }
-        
-        if (!targetUserId) {
-          setError("❌ Nenhum usuário pendente encontrado. O usuário precisa se registrar no sistema primeiro. Após o registro, você pode atribuir permissões.");
+        if (userIdByEmail) {
+          targetUserId = userIdByEmail;
+          console.log("✅ Usuário encontrado pelo email:", emailNormalizado, "->", targetUserId);
+          
+          // Verificar se já tem role neste condomínio
+          const { data: existingRole } = await supabase
+            .from('user_roles')
+            .select('id')
+            .eq('user_id', targetUserId)
+            .eq('condominio_id', dados.usuario.condominio_id)
+            .maybeSingle();
+          
+          if (existingRole) {
+            setError("⚠️ Este usuário já possui uma função neste condomínio.");
+            setTimeout(() => setError(""), 5000);
+            return;
+          }
+        } else {
+          console.log("❌ Usuário não encontrado pelo email:", emailNormalizado, rpcError);
+          setError("❌ Usuário não encontrado. O email informado precisa estar registrado no sistema primeiro (criar conta com email/senha na tela de login).");
           setTimeout(() => setError(""), 8000);
           return;
         }
