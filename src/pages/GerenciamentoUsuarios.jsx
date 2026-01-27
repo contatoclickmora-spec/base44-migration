@@ -332,41 +332,33 @@ export default function GerenciamentoUsuarios({ userType }) {
         
         const emailNormalizado = dados.usuario.email.trim().toLowerCase();
         
-        // Buscar na tabela auth.users via consulta indireta (profiles não tem email, mas user_id é o mesmo)
-        // Primeiro verificar se existe profile com esse user_id
-        const { data: authUser, error: authError } = await supabase.auth.admin?.getUserByEmail?.(emailNormalizado);
-        
-        // Se não temos acesso admin, buscar por aproximação via profiles
-        // (isso funciona se o profile tem o nome igual ao email ou se já foi cadastrado)
         let targetUserId = null;
         
-        // Tentar buscar usuário existente pelo profile
-        const { data: existingProfiles } = await supabase
-          .from('profiles')
-          .select('user_id, nome')
-          .limit(100);
+        // Buscar todos os profiles e roles para comparar
+        const [profilesResult, rolesResult] = await Promise.all([
+          supabase.from('profiles').select('user_id, nome').limit(200),
+          supabase.from('user_roles').select('user_id, condominio_id')
+        ]);
         
-        // Verificar se algum profile corresponde ao email (nome pode conter o email em alguns casos)
-        // ou buscar o profile do usuário de teste registrado
-        if (existingProfiles) {
-          // Buscar por user_id já existente que não tem role ainda
-          const { data: existingRoles } = await supabase
-            .from('user_roles')
-            .select('user_id');
-          
-          const usersWithRoles = new Set((existingRoles || []).map(r => r.user_id));
-          
-          // Encontrar profile sem role associada
-          const profileSemRole = existingProfiles.find(p => !usersWithRoles.has(p.user_id));
-          
-          if (profileSemRole) {
-            targetUserId = profileSemRole.user_id;
-            console.log("✅ Encontrado usuário sem role:", profileSemRole.nome);
-          }
+        const existingProfiles = profilesResult.data || [];
+        const existingRoles = rolesResult.data || [];
+        
+        // Criar set de user_ids que já têm role no condomínio selecionado
+        const usersWithRolesInCondominio = new Set(
+          existingRoles
+            .filter(r => r.condominio_id === dados.usuario.condominio_id)
+            .map(r => r.user_id)
+        );
+        
+        // Encontrar profile sem role no condomínio atual
+        const profileSemRole = existingProfiles.find(p => !usersWithRolesInCondominio.has(p.user_id));
+        
+        if (profileSemRole) {
+          targetUserId = profileSemRole.user_id;
+          console.log("✅ Encontrado usuário sem role no condomínio:", profileSemRole.nome);
         }
         
         if (!targetUserId) {
-          // Usuário não existe - informar que precisa ser registrado primeiro
           setError("❌ Nenhum usuário pendente encontrado. O usuário precisa se registrar no sistema primeiro. Após o registro, você pode atribuir permissões.");
           setTimeout(() => setError(""), 8000);
           return;
