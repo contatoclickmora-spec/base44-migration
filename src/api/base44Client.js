@@ -115,10 +115,37 @@ export const base44 = {
   },
   integrations: {
     Core: {
-      async UploadFile({ file }) {
-        // TODO: Implement with Supabase Storage
-        console.warn('UploadFile not implemented - needs Supabase Storage bucket');
-        return { file_url: '' };
+      async UploadFile({ file, bucket = 'encomendas' }) {
+        try {
+          // Generate unique filename
+          const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+          const fileName = `${crypto.randomUUID()}.${fileExt}`;
+          const filePath = `${fileName}`;
+
+          // Upload to Supabase Storage
+          const { data, error } = await supabase.storage
+            .from(bucket)
+            .upload(filePath, file, {
+              cacheControl: '3600',
+              upsert: false
+            });
+
+          if (error) {
+            console.error('Upload error:', error);
+            throw error;
+          }
+
+          // Get public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from(bucket)
+            .getPublicUrl(data.path);
+
+          console.log('✅ File uploaded:', publicUrl);
+          return { file_url: publicUrl };
+        } catch (err) {
+          console.error('❌ UploadFile failed:', err);
+          throw err;
+        }
       }
     }
   },
