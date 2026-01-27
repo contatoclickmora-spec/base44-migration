@@ -1,14 +1,27 @@
-import { createClient } from '@base44/sdk';
-import { appParams } from '@/lib/app-params';
+import { supabase } from '@/integrations/supabase/client';
 
-const { appId, token, functionsVersion, appBaseUrl } = appParams;
-
-//Create a client with authentication required
-export const base44 = createClient({
-  appId,
-  token,
-  functionsVersion,
-  serverUrl: '',
-  requiresAuth: false,
-  appBaseUrl
-});
+// Adapter that mimics the base44 SDK interface but uses Supabase
+export const base44 = {
+  auth: {
+    me: async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) throw error;
+      return user;
+    },
+    logout: async (redirectUrl) => {
+      await supabase.auth.signOut();
+      if (redirectUrl) {
+        window.location.href = redirectUrl;
+      }
+    },
+    redirectToLogin: (returnUrl) => {
+      window.location.href = `/Auth?returnUrl=${encodeURIComponent(returnUrl || '/')}`;
+    }
+  },
+  appLogs: {
+    logUserInApp: async (pageName) => {
+      // Optional: implement logging if needed
+      console.log(`[NAV] Page visited: ${pageName}`);
+    }
+  }
+};
