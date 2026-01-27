@@ -20,7 +20,7 @@ export default function DashboardRouter() {
 
         if (!roleInfo.isAuthenticated) {
           console.log("🚫 [ROUTER] Usuário não autenticado, redirecionando para login");
-          window.location.href = '/Auth';
+          window.location.href = '/login';
           return;
         }
 
@@ -56,7 +56,7 @@ export default function DashboardRouter() {
           <h2 className="text-xl font-bold text-gray-900 mb-2">Erro de Autenticação</h2>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
-            onClick={() => window.location.href = '/Auth'}
+            onClick={() => window.location.href = '/login'}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Fazer Login Novamente

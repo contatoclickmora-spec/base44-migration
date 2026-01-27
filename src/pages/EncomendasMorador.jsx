@@ -80,7 +80,7 @@ export default function EncomendasMorador() {
 
         if (!role || !role.isAuthenticated) {
           console.log("🚫 [ENCOMENDAS MORADOR] Não autenticado");
-          window.location.href = '/Auth';
+          window.location.href = '/login';
           return;
         }
 

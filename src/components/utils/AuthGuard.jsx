@@ -18,14 +18,14 @@ export default function AuthGuard({ children }) {
         if (!roleInfo || !roleInfo.isAuthenticated) {
           // Não autenticado - redirecionar para login
           console.log('[AUTH GUARD] Usuário não autenticado, redirecionando para login');
-          window.location.href = '/Auth';
+          window.location.href = '/login';
           return;
         }
 
         setIsAuthenticated(true);
       } catch (error) {
         console.error('[AUTH GUARD] Erro ao verificar autenticação:', error);
-        window.location.href = '/Auth';
+        window.location.href = '/login';
       } finally {
         setChecking(false);
       }
