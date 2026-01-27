@@ -1,1 +1,7 @@
 project_id = "exocfapvvpzxdxwqkosa"
+
+[functions.notificar-encomenda-whatsapp]
+verify_jwt = false
+
+[functions.enviar-alerta-sos]
+verify_jwt = false
