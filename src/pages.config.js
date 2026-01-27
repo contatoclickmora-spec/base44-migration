@@ -1,4 +1,5 @@
 import AdminMaster from './pages/AdminMaster';
+import AguardandoAprovacao from './pages/AguardandoAprovacao';
 import AprovacaoMoradores from './pages/AprovacaoMoradores';
 import Assinatura from './pages/Assinatura';
 import AuditoriaAlteracoes from './pages/AuditoriaAlteracoes';
@@ -46,6 +47,7 @@ import __Layout from './Layout.jsx';
 
 export const PAGES = {
     "AdminMaster": AdminMaster,
+    "AguardandoAprovacao": AguardandoAprovacao,
     "AprovacaoMoradores": AprovacaoMoradores,
     "Assinatura": Assinatura,
     "AuditoriaAlteracoes": AuditoriaAlteracoes,

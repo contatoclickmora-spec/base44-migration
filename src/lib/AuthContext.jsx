@@ -10,6 +10,7 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [appPublicSettings, setAppPublicSettings] = useState({});
+  const [userStatus, setUserStatus] = useState(null); // 'pendente', 'aprovado', 'rejeitado', 'inativo', 'no_role'
 
   useEffect(() => {
     checkAppState();
@@ -20,9 +21,12 @@ export const AuthProvider = ({ children }) => {
         if (session?.user) {
           setUser(session.user);
           setIsAuthenticated(true);
+          // Check user status after auth
+          await checkUserStatus(session.user.id);
         } else {
           setUser(null);
           setIsAuthenticated(false);
+          setUserStatus(null);
         }
         setIsLoadingAuth(false);
       }
@@ -30,6 +34,48 @@ export const AuthProvider = ({ children }) => {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const checkUserStatus = async (userId) => {
+    try {
+      // First check if user has any role (master, admin, portaria)
+      const { data: roles, error: rolesError } = await supabase
+        .from('user_roles')
+        .select('id, role, condominio_id')
+        .eq('user_id', userId);
+      
+      if (rolesError) {
+        console.error('Error checking user roles:', rolesError);
+      }
+
+      // If user has roles, they're approved (admin/master/portaria)
+      if (roles && roles.length > 0) {
+        setUserStatus('aprovado');
+        return;
+      }
+
+      // Check if user is a morador
+      const { data: morador, error: moradorError } = await supabase
+        .from('moradores')
+        .select('id, status, unidade_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (moradorError) {
+        console.error('Error checking morador status:', moradorError);
+      }
+
+      if (morador) {
+        // User is a morador, check their status
+        setUserStatus(morador.status || 'pendente');
+      } else {
+        // User has no role and is not a morador = new user pending
+        setUserStatus('pendente');
+      }
+    } catch (error) {
+      console.error('Error checking user status:', error);
+      setUserStatus('pendente');
+    }
+  };
 
   const checkAppState = async () => {
     try {
@@ -52,8 +98,10 @@ export const AuthProvider = ({ children }) => {
       if (session?.user) {
         setUser(session.user);
         setIsAuthenticated(true);
+        await checkUserStatus(session.user.id);
       } else {
         setIsAuthenticated(false);
+        setUserStatus(null);
       }
       
       setIsLoadingAuth(false);
@@ -72,6 +120,7 @@ export const AuthProvider = ({ children }) => {
       await supabase.auth.signOut();
       setUser(null);
       setIsAuthenticated(false);
+      setUserStatus(null);
       
       if (shouldRedirect) {
         window.location.href = '/Auth';
@@ -85,6 +134,8 @@ export const AuthProvider = ({ children }) => {
     window.location.href = '/Auth';
   };
 
+  const isPendingApproval = userStatus === 'pendente';
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -93,9 +144,12 @@ export const AuthProvider = ({ children }) => {
       isLoadingPublicSettings,
       authError,
       appPublicSettings,
+      userStatus,
+      isPendingApproval,
       logout,
       navigateToLogin,
-      checkAppState
+      checkAppState,
+      checkUserStatus
     }}>
       {children}
     </AuthContext.Provider>
