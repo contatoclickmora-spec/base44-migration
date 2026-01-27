@@ -192,7 +192,7 @@ export default function NovoChamado({ moradorLogado: moradorLogadoProp, userType
       const todosMoradores = await Morador.list();
       const filtrados = todosMoradores.filter(m => 
         m.condominio_id === moradorLogado.condominio_id &&
-        m.status === 'ativo' &&
+        m.status === 'aprovado' &&
         m.tipo_usuario === 'morador' && // Only search for other moradors
         (m.nome.toLowerCase().includes(termo.toLowerCase()) ||
          m.apelido_endereco?.toLowerCase().includes(termo.toLowerCase()))

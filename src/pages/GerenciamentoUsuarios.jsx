@@ -198,12 +198,13 @@ export default function GerenciamentoUsuarios({ userType }) {
       return matchSearch && matchCondominio && matchStatus && matchNivel;
     });
 
-  // Estatísticas
+  // Estatísticas - usando valores corretos do enum resident_status
   const stats = {
     total: usuarios.length,
-    ativos: usuarios.filter(u => u.status === 'ativo').length,
+    ativos: usuarios.filter(u => u.status === 'aprovado').length,
     inativos: usuarios.filter(u => u.status === 'inativo').length,
     pendentes: usuarios.filter(u => u.status === 'pendente').length,
+    rejeitados: usuarios.filter(u => u.status === 'rejeitado').length,
     sindicos: usuarios.filter(u => u.tipo_usuario === 'administrador').length,
     porteiros: usuarios.filter(u => u.tipo_usuario === 'porteiro').length,
     moradores: usuarios.filter(u => u.tipo_usuario === 'morador').length
@@ -231,12 +232,22 @@ export default function GerenciamentoUsuarios({ userType }) {
   };
 
   const handleToggleStatus = async (usuario, novoStatus) => {
-    if (!window.confirm(`Tem certeza que deseja ${novoStatus === 'ativo' ? 'ativar' : 'desativar'} ${usuario.nome}?`)) {
+    // Mapear status para valores válidos do enum
+    const statusMap = {
+      'ativo': 'aprovado',
+      'aprovado': 'aprovado',
+      'inativo': 'inativo',
+      'pendente': 'pendente',
+      'rejeitado': 'rejeitado'
+    };
+    const statusFinal = statusMap[novoStatus] || novoStatus;
+    
+    if (!window.confirm(`Tem certeza que deseja alterar o status de ${usuario.nome} para ${statusFinal}?`)) {
       return;
     }
 
     try {
-      await Morador.update(usuario.id, { status: novoStatus });
+      await Morador.update(usuario.id, { status: statusFinal });
       setSuccess(`Status de ${usuario.nome} atualizado com sucesso!`);
       loadData();
       setTimeout(() => setSuccess(""), 5000);

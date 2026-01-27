@@ -25,7 +25,7 @@ export default function NovoUsuarioModal({ condominios, residencias, onClose, on
       email: "",
       telefone: "",
       tipo_usuario: "morador",
-      status: "ativo",
+      status: "pendente", // Deve usar valores do enum resident_status: pendente, aprovado, rejeitado, inativo
       condominio_id: "",
       residencia_id: "",
       apelido_endereco: ""
@@ -291,9 +291,10 @@ export default function NovoUsuarioModal({ condominios, residencias, onClose, on
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ativo">Ativo</SelectItem>
-                    <SelectItem value="inativo">Inativo</SelectItem>
+                    <SelectItem value="aprovado">Aprovado (Ativo)</SelectItem>
                     <SelectItem value="pendente">Pendente de Aprovação</SelectItem>
+                    <SelectItem value="inativo">Inativo</SelectItem>
+                    <SelectItem value="rejeitado">Rejeitado</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
