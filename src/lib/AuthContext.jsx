@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { getUserRole, clearAuthCache } from '@/components/utils/authUtils';
 
 const AuthContext = createContext();
 
@@ -11,6 +12,7 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [appPublicSettings, setAppPublicSettings] = useState({});
   const [userStatus, setUserStatus] = useState(null); // 'pendente', 'aprovado', 'rejeitado', 'inativo', 'no_role'
+  const [userRole, setUserRole] = useState(null);
 
   useEffect(() => {
     checkAppState();
@@ -18,15 +20,26 @@ export const AuthProvider = ({ children }) => {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          clearAuthCache();
+          setUser(null);
+          setIsAuthenticated(false);
+          setUserStatus(null);
+          setUserRole(null);
+          setIsLoadingAuth(false);
+          return;
+        }
+        
         if (session?.user) {
           setUser(session.user);
           setIsAuthenticated(true);
-          // Check user status after auth
+          // Check user status and role after auth
           await checkUserStatus(session.user.id);
         } else {
           setUser(null);
           setIsAuthenticated(false);
           setUserStatus(null);
+          setUserRole(null);
         }
         setIsLoadingAuth(false);
       }
@@ -37,7 +50,7 @@ export const AuthProvider = ({ children }) => {
 
   const checkUserStatus = async (userId) => {
     try {
-      // First check if user has any role (master, admin, portaria)
+      // First check if user has any role (master, admin, portaria, morador)
       const { data: roles, error: rolesError } = await supabase
         .from('user_roles')
         .select('id, role, condominio_id')
@@ -47,7 +60,7 @@ export const AuthProvider = ({ children }) => {
         console.error('Error checking user roles:', rolesError);
       }
 
-      // If user has roles, they're approved (admin/master/portaria)
+      // If user has roles, they're approved (admin/master/portaria/morador)
       if (roles && roles.length > 0) {
         setUserStatus('aprovado');
         return;
