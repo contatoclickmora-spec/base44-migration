@@ -13,16 +13,11 @@ export const Morador = {
     const ascending = !sort.startsWith('-');
     const field = sort.replace(/^-/, '');
     
-    const { data, error } = await supabase
+    // First get moradores with unidades join
+    const { data: moradoresData, error: moradoresError } = await supabase
       .from('moradores')
       .select(`
         *,
-        profiles:user_id (
-          nome,
-          telefone,
-          cpf,
-          avatar_url
-        ),
         unidades:unidade_id (
           id,
           numero,
@@ -40,8 +35,26 @@ export const Morador = {
       `)
       .order(field, { ascending });
     
-    if (error) throw error;
-    return (data || []).map(transformMorador);
+    if (moradoresError) throw moradoresError;
+    if (!moradoresData || moradoresData.length === 0) return [];
+
+    // Get user_ids to fetch profiles separately
+    const userIds = [...new Set(moradoresData.map(m => m.user_id).filter(Boolean))];
+    
+    // Fetch profiles separately (no FK constraint needed)
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('user_id, nome, telefone, cpf, avatar_url')
+      .in('user_id', userIds);
+    
+    // Create profiles map
+    const profilesMap = {};
+    (profilesData || []).forEach(p => {
+      profilesMap[p.user_id] = p;
+    });
+
+    // Merge profiles into moradores
+    return moradoresData.map(m => transformMorador(m, profilesMap[m.user_id]));
   },
 
   /**
@@ -55,12 +68,6 @@ export const Morador = {
       .from('moradores')
       .select(`
         *,
-        profiles:user_id (
-          nome,
-          telefone,
-          cpf,
-          avatar_url
-        ),
         unidades:unidade_id (
           id,
           numero,
@@ -77,12 +84,7 @@ export const Morador = {
         )
       `);
 
-    // Handle condominio_id filter specially (needs to filter via join)
-    if (filters.condominio_id) {
-      // We'll filter after fetching since it's a nested relation
-    }
-    
-    // Apply direct filters
+    // Apply direct filters (skip condominio_id - handled after)
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined && value !== null && key !== 'condominio_id') {
         if (Array.isArray(value)) {
@@ -99,10 +101,23 @@ export const Morador = {
       query = query.limit(limit);
     }
     
-    const { data, error } = await query;
+    const { data: moradoresData, error } = await query;
     if (error) throw error;
+    if (!moradoresData || moradoresData.length === 0) return [];
+
+    // Get profiles separately
+    const userIds = [...new Set(moradoresData.map(m => m.user_id).filter(Boolean))];
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('user_id, nome, telefone, cpf, avatar_url')
+      .in('user_id', userIds);
     
-    let results = (data || []).map(transformMorador);
+    const profilesMap = {};
+    (profilesData || []).forEach(p => {
+      profilesMap[p.user_id] = p;
+    });
+
+    let results = moradoresData.map(m => transformMorador(m, profilesMap[m.user_id]));
     
     // Filter by condominio_id if specified
     if (filters.condominio_id) {
@@ -116,16 +131,10 @@ export const Morador = {
    * Get single morador by ID
    */
   async get(id) {
-    const { data, error } = await supabase
+    const { data: moradorData, error } = await supabase
       .from('moradores')
       .select(`
         *,
-        profiles:user_id (
-          nome,
-          telefone,
-          cpf,
-          avatar_url
-        ),
         unidades:unidade_id (
           id,
           numero,
@@ -145,23 +154,30 @@ export const Morador = {
       .maybeSingle();
     
     if (error) throw error;
-    return data ? transformMorador(data) : null;
+    if (!moradorData) return null;
+
+    // Get profile separately
+    let profile = null;
+    if (moradorData.user_id) {
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('user_id, nome, telefone, cpf, avatar_url')
+        .eq('user_id', moradorData.user_id)
+        .maybeSingle();
+      profile = profileData;
+    }
+
+    return transformMorador(moradorData, profile);
   },
 
   /**
    * Get morador by user_id
    */
   async getByUserId(userId) {
-    const { data, error } = await supabase
+    const { data: moradorData, error } = await supabase
       .from('moradores')
       .select(`
         *,
-        profiles:user_id (
-          nome,
-          telefone,
-          cpf,
-          avatar_url
-        ),
         unidades:unidade_id (
           id,
           numero,
@@ -181,7 +197,16 @@ export const Morador = {
       .maybeSingle();
     
     if (error) throw error;
-    return data ? transformMorador(data) : null;
+    if (!moradorData) return null;
+
+    // Get profile separately
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('user_id, nome, telefone, cpf, avatar_url')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    return transformMorador(moradorData, profileData);
   },
 
   /**
@@ -246,11 +271,13 @@ export const Morador = {
 
 /**
  * Transform raw morador data to include flattened fields for compatibility
+ * @param {Object} raw - Raw morador data from database
+ * @param {Object} profile - Profile data fetched separately
  */
-function transformMorador(raw) {
+function transformMorador(raw, profile = null) {
   if (!raw) return null;
   
-  const profile = raw.profiles || {};
+  const profileData = profile || {};
   const unidade = raw.unidades || {};
   const bloco = unidade?.blocos || {};
   const condominio = bloco?.condominios || {};
@@ -268,10 +295,11 @@ function transformMorador(raw) {
     updated_at: raw.updated_at,
     
     // Flattened profile fields (for compatibility)
-    nome: profile.nome || 'Sem nome',
-    telefone: profile.telefone || '',
-    cpf: profile.cpf || '',
-    avatar_url: profile.avatar_url || '',
+    nome: profileData.nome || 'Sem nome',
+    telefone: profileData.telefone || '',
+    cpf: profileData.cpf || '',
+    avatar_url: profileData.avatar_url || '',
+    email: profileData.email || '',
     
     // Flattened unidade/bloco/condominio fields
     numero_unidade: unidade.numero || '',
@@ -287,6 +315,7 @@ function transformMorador(raw) {
     tipo_usuario: 'morador', // Default tipo
     
     // Keep raw nested data
-    _raw: raw
+    _raw: raw,
+    _profile: profileData
   };
 }

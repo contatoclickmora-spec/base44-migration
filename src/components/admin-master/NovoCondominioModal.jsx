@@ -10,19 +10,19 @@ export default function NovoCondominioModal({ onClose, onSave }) {
   const [formData, setFormData] = useState({
     nome: "",
     cidade: "",
+    estado: "SP",
+    cep: "",
     endereco: "",
-    email_administrador: "",
+    email: "",
     telefone: "",
     plano: "30_moradores",
     status: "teste",
     limite_moradores: 30,
-    moradores_ativos: 0, // Changed from moradores_cadastrados
-    total_usuarios: 0, // Added
-    valor_mensalidade: 109, // Changed from 120
+    moradores_ativos: 0,
+    total_usuarios: 0,
+    valor_mensalidade: 109,
     data_inicio: new Date().toISOString().split('T')[0],
-    observacoes: "",
-    sindicos_ids: [], // Added
-    administrador_supremo_id: null // Added
+    observacoes: ""
   });
 
   const [saving, setSaving] = useState(false);
@@ -50,7 +50,9 @@ export default function NovoCondominioModal({ onClose, onSave }) {
     const newErrors = {};
     if (!formData.nome.trim()) newErrors.nome = "Nome é obrigatório";
     if (!formData.cidade.trim()) newErrors.cidade = "Cidade é obrigatória";
-    if (!formData.email_administrador.trim()) newErrors.email_administrador = "Email é obrigatório";
+    if (!formData.estado.trim()) newErrors.estado = "Estado é obrigatório";
+    if (!formData.cep.trim()) newErrors.cep = "CEP é obrigatório";
+    if (!formData.endereco.trim()) newErrors.endereco = "Endereço é obrigatório";
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -61,81 +63,24 @@ export default function NovoCondominioModal({ onClose, onSave }) {
 
     setSaving(true);
     try {
-      const dataInicio = new Date(formData.data_inicio);
-      const dataRenovacao = new Date(dataInicio);
-      dataRenovacao.setDate(dataRenovacao.getDate() + 30);
-
-      // CRIAR CONDOMÍNIO COM CONFIGURAÇÕES PADRÃO
+      // Create condomínio with required fields matching the database schema
       const novoCondominio = await Condominio.create({
         nome: formData.nome,
         cidade: formData.cidade,
-        endereco: formData.endereco,
-        email_administrador: formData.email_administrador,
-        telefone: formData.telefone,
-        plano: formData.plano,
-        status: formData.status,
-        limite_moradores: formData.limite_moradores,
-        moradores_ativos: 0,
-        total_usuarios: 0,
-        valor_mensalidade: formData.valor_mensalidade,
-        data_inicio: formData.data_inicio,
-        data_renovacao: dataRenovacao.toISOString().split('T')[0],
-        observacoes: formData.observacoes,
-        sindicos_ids: [],
-        administrador_supremo_id: null,
-        permissoes_perfis: {
-          morador: {
-            dashboard: true,
-            encomendas: true,
-            chamados: true,
-            visitantes: true,
-            avisos: true,
-            enquetes: true,
-            marketplace: true,
-            vistoria: true,
-            manutencoes: true
-          },
-          porteiro: {
-            dashboard: true,
-            registrar_encomenda: true,
-            retirar_encomenda: true,
-            visitantes_portaria: true,
-            chamados_portaria: true,
-            entregadores: true,
-            gerenciamento_encomendas: true,
-            moradores: true,
-            notificacoes_whatsapp: true
-          },
-          sindico: {
-            dashboard: true,
-            registrar_encomenda: true,
-            retirar_encomenda: true,
-            visitantes_portaria: true,
-            chamados_portaria: true,
-            entregadores: true,
-            gerenciamento_encomendas: true,
-            notificacoes_whatsapp: true,
-            aprovacao_moradores: true,
-            enviar_avisos: true,
-            relatorios: true,
-            moradores: true,
-            funcionarios: true,
-            templates: true,
-            permissoes: true,
-            manutencoes: true,
-            documentos: true,
-            marketplace: true,
-            enquetes: true
-          }
-        }
+        estado: formData.estado,
+        cep: formData.cep,
+        endereco: formData.endereco || 'Endereço não informado',
+        email: formData.email || null,
+        telefone: formData.telefone || null,
+        ativo: true
       });
       
       console.log("✅ Condomínio criado:", novoCondominio.id);
-      alert("✅ Condomínio criado com sucesso! Todas as configurações foram aplicadas automaticamente.");
+      alert("✅ Condomínio criado com sucesso!");
       onSave();
     } catch (error) {
       console.error("Erro ao criar condomínio:", error);
-      alert("Erro ao criar condomínio. Verifique os dados e tente novamente.");
+      alert("Erro ao criar condomínio: " + (error.message || "Verifique os dados e tente novamente."));
     } finally {
       setSaving(false);
     }
@@ -178,29 +123,55 @@ export default function NovoCondominioModal({ onClose, onSave }) {
             </div>
           </div>
 
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="estado">Estado *</Label>
+              <Input
+                id="estado"
+                value={formData.estado}
+                onChange={(e) => setFormData({...formData, estado: e.target.value})}
+                placeholder="Ex: SP"
+                maxLength={2}
+                className={errors.estado ? "border-red-500" : ""}
+              />
+              {errors.estado && <p className="text-xs text-red-500 mt-1">{errors.estado}</p>}
+            </div>
+
+            <div>
+              <Label htmlFor="cep">CEP *</Label>
+              <Input
+                id="cep"
+                value={formData.cep}
+                onChange={(e) => setFormData({...formData, cep: e.target.value})}
+                placeholder="Ex: 01234-567"
+                className={errors.cep ? "border-red-500" : ""}
+              />
+              {errors.cep && <p className="text-xs text-red-500 mt-1">{errors.cep}</p>}
+            </div>
+          </div>
+
           <div>
-            <Label htmlFor="endereco">Endereço Completo</Label>
+            <Label htmlFor="endereco">Endereço Completo *</Label>
             <Input
               id="endereco"
               value={formData.endereco}
               onChange={(e) => setFormData({...formData, endereco: e.target.value})}
               placeholder="Rua, número, bairro"
+              className={errors.endereco ? "border-red-500" : ""}
             />
+            {errors.endereco && <p className="text-xs text-red-500 mt-1">{errors.endereco}</p>}
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="email">Email do Administrador (Síndico) *</Label>
+              <Label htmlFor="email">Email de Contato</Label>
               <Input
                 id="email"
                 type="email"
-                value={formData.email_administrador}
-                onChange={(e) => setFormData({...formData, email_administrador: e.target.value})}
-                placeholder="sindico@condominio.com"
-                className={errors.email_administrador ? "border-red-500" : ""}
+                value={formData.email}
+                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                placeholder="contato@condominio.com"
               />
-              <p className="text-xs text-gray-500 mt-1">Este será o email de login e contato principal</p>
-              {errors.email_administrador && <p className="text-xs text-red-500 mt-1">{errors.email_administrador}</p>}
             </div>
 
             <div>
@@ -209,39 +180,21 @@ export default function NovoCondominioModal({ onClose, onSave }) {
                 id="telefone"
                 value={formData.telefone}
                 onChange={(e) => setFormData({...formData, telefone: e.target.value})}
-                placeholder="+55 11 91234-5678"
+                placeholder="(11) 99999-9999"
               />
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="plano">Selecione o Plano</Label>
-            <select
-              id="plano"
-              value={formData.plano}
-              onChange={(e) => handlePlanoChange(e.target.value)}
-              className="w-full mt-1 p-2 border rounded-md"
-            >
-              <option value="30_moradores">30 moradores - R$ 109/mês</option>
-              <option value="50_moradores">50 moradores - R$ 189/mês</option>
-              <option value="100_moradores">100 moradores - R$ 324/mês</option>
-              <option value="200_moradores">200 moradores - R$ 524/mês</option>
-              <option value="500_moradores">500 moradores - R$ 849/mês</option>
-            </select>
-          </div>
-
-          <div>
-            <Label htmlFor="observacoes">Observações</Label>
-            <textarea
-              id="observacoes"
-              value={formData.observacoes}
-              onChange={(e) => setFormData({...formData, observacoes: e.target.value})}
-              placeholder="Informações adicionais..."
-              className="w-full mt-1 p-2 border rounded-md h-20"
-            />
-          </div>
-
           <div className="flex gap-3 pt-4 border-t">
+            <Button variant="outline" onClick={onClose} className="flex-1">
+              Cancelar
+            </Button>
+            <Button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600">
+              <Plus className="w-4 h-4 mr-2" />
+              {saving ? 'Criando...' : 'Criar Condomínio'}
+            </Button>
+          </div>
+        </CardContent>
             <Button variant="outline" onClick={onClose} className="flex-1">
               Cancelar
             </Button>

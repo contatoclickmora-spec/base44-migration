@@ -63,25 +63,8 @@ export default function AdminMaster({ userType }) { // userType prop is now unus
   const [isInitializing, setIsInitializing] = useState(true);
 
   const sincronizarContagemMoradores = useCallback(async (condominiosData, moradoresData) => {
-    const updates = [];
-    for (const cond of condominiosData) {
-      const moradoresAtivosNoCondominio = moradoresData.filter(
-        m => m.condominio_id === cond.id && m.tipo_usuario === 'morador' && m.status === 'ativo'
-      ).length;
-
-      const totalUsuarios = moradoresData.filter(m => m.condominio_id === cond.id).length;
-
-      if (cond.moradores_ativos !== moradoresAtivosNoCondominio || cond.total_usuarios !== totalUsuarios) {
-        updates.push(Condominio.update(cond.id, {
-          moradores_ativos: moradoresAtivosNoCondominio,
-          total_usuarios: totalUsuarios
-        }));
-      }
-    }
-    if (updates.length > 0) {
-      await Promise.all(updates);
-      return true;
-    }
+    // Skip sync if condominios table doesn't have these fields
+    // This is a legacy feature that may not be needed in new schema
     return false;
   }, []);
 
@@ -265,7 +248,7 @@ export default function AdminMaster({ userType }) { // userType prop is now unus
   const condominiosAtivosMesPassado = Math.floor(condominiosAtivos * 0.85);
   const variacaoCondominios = calcularVariacao(condominiosAtivos, condominiosAtivosMesPassado);
 
-  const moradoresAtivos = moradores.filter(m => m.tipo_usuario === 'morador' && m.status === 'ativo').length;
+  const moradoresAtivos = moradores.filter(m => m.status === 'aprovado' || m.status === 'ativo').length;
   const moradoresAtivosMesPassado = Math.floor(moradoresAtivos * 0.85);
   const variacaoMoradores = calcularVariacao(moradoresAtivos, moradoresAtivosMesPassado);
 
