@@ -194,7 +194,7 @@ export default function AdminMaster({ userType }) { // userType prop is now unus
         if (abortController.signal.aborted) return;
 
         if (!role || !role.isAuthenticated) {
-          window.location.href = '/login';
+          window.location.href = '/Auth';
           return;
         }
 

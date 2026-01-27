@@ -92,7 +92,7 @@ async function loadUserRoleFromServer() {
           const { base44 } = await import('@/api/base44Client');
           await base44.auth.redirectToLogin();
         } catch (redirectErr) {
-          window.location.href = '/login';
+          window.location.href = '/Auth';
         }
       }
       

@@ -32,7 +32,7 @@ export default function WhatsAppPage() {
       try {
         setLoading(true);
         const role = await getUserRole();
-        if (!role?.isAuthenticated) { window.location.href = '/login'; return; }
+        if (!role?.isAuthenticated) { window.location.href = '/Auth'; return; }
         if (!['administrador', 'porteiro', 'admin_master'].includes(role.userType)) {
           // Bloquear acesso para moradores
           window.location.href = '/DashboardMorador';
