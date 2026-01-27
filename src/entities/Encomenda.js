@@ -8,7 +8,7 @@ export const Encomenda = {
     const ascending = !sort.startsWith('-');
     const field = sort.replace(/^-/, '').replace('created_date', 'created_at');
     
-    const { data, error } = await supabase
+    const { data: encomendasData, error } = await supabase
       .from('encomendas')
       .select(`
         *,
@@ -20,20 +20,44 @@ export const Encomenda = {
             nome,
             condominio_id
           )
-        ),
-        moradores:morador_id (
-          id,
-          user_id,
-          profiles:user_id (
-            nome,
-            telefone
-          )
         )
       `)
       .order(field, { ascending });
     
     if (error) throw error;
-    return (data || []).map(transformEncomenda);
+    if (!encomendasData || encomendasData.length === 0) return [];
+
+    // Get morador data separately if needed
+    const moradorIds = [...new Set(encomendasData.map(e => e.morador_id).filter(Boolean))];
+    let moradoresMap = {};
+    
+    if (moradorIds.length > 0) {
+      const { data: moradoresData } = await supabase
+        .from('moradores')
+        .select('id, user_id')
+        .in('id', moradorIds);
+      
+      if (moradoresData) {
+        const userIds = moradoresData.map(m => m.user_id).filter(Boolean);
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('user_id, nome, telefone')
+          .in('user_id', userIds);
+        
+        const profilesMap = {};
+        (profilesData || []).forEach(p => { profilesMap[p.user_id] = p; });
+        
+        moradoresData.forEach(m => {
+          moradoresMap[m.id] = {
+            id: m.id,
+            user_id: m.user_id,
+            profile: profilesMap[m.user_id] || {}
+          };
+        });
+      }
+    }
+
+    return encomendasData.map(e => transformEncomenda(e, moradoresMap[e.morador_id]));
   },
 
   async filter(filters = {}, sort = '-created_at', limit = null) {
@@ -51,14 +75,6 @@ export const Encomenda = {
             id,
             nome,
             condominio_id
-          )
-        ),
-        moradores:morador_id (
-          id,
-          user_id,
-          profiles:user_id (
-            nome,
-            telefone
           )
         )
       `);
@@ -80,13 +96,45 @@ export const Encomenda = {
       query = query.limit(limit);
     }
     
-    const { data, error } = await query;
+    const { data: encomendasData, error } = await query;
     if (error) throw error;
-    return (data || []).map(transformEncomenda);
+    if (!encomendasData || encomendasData.length === 0) return [];
+
+    // Get morador data separately
+    const moradorIds = [...new Set(encomendasData.map(e => e.morador_id).filter(Boolean))];
+    let moradoresMap = {};
+    
+    if (moradorIds.length > 0) {
+      const { data: moradoresData } = await supabase
+        .from('moradores')
+        .select('id, user_id')
+        .in('id', moradorIds);
+      
+      if (moradoresData) {
+        const userIds = moradoresData.map(m => m.user_id).filter(Boolean);
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('user_id, nome, telefone')
+          .in('user_id', userIds);
+        
+        const profilesMap = {};
+        (profilesData || []).forEach(p => { profilesMap[p.user_id] = p; });
+        
+        moradoresData.forEach(m => {
+          moradoresMap[m.id] = {
+            id: m.id,
+            user_id: m.user_id,
+            profile: profilesMap[m.user_id] || {}
+          };
+        });
+      }
+    }
+
+    return encomendasData.map(e => transformEncomenda(e, moradoresMap[e.morador_id]));
   },
 
   async get(id) {
-    const { data, error } = await supabase
+    const { data: encomendaData, error } = await supabase
       .from('encomendas')
       .select(`
         *,
@@ -98,21 +146,35 @@ export const Encomenda = {
             nome,
             condominio_id
           )
-        ),
-        moradores:morador_id (
-          id,
-          user_id,
-          profiles:user_id (
-            nome,
-            telefone
-          )
         )
       `)
       .eq('id', id)
       .maybeSingle();
     
     if (error) throw error;
-    return data ? transformEncomenda(data) : null;
+    if (!encomendaData) return null;
+
+    // Get morador data if exists
+    let moradorData = null;
+    if (encomendaData.morador_id) {
+      const { data: morador } = await supabase
+        .from('moradores')
+        .select('id, user_id')
+        .eq('id', encomendaData.morador_id)
+        .maybeSingle();
+      
+      if (morador?.user_id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('user_id, nome, telefone')
+          .eq('user_id', morador.user_id)
+          .maybeSingle();
+        
+        moradorData = { id: morador.id, user_id: morador.user_id, profile: profile || {} };
+      }
+    }
+
+    return transformEncomenda(encomendaData, moradorData);
   },
 
   async create(record) {
@@ -170,13 +232,17 @@ export const Encomenda = {
   }
 };
 
-function transformEncomenda(raw) {
+/**
+ * Transform encomenda data
+ * @param {Object} raw - Raw encomenda from database
+ * @param {Object} moradorData - Morador with profile data
+ */
+function transformEncomenda(raw, moradorData = null) {
   if (!raw) return null;
   
   const unidade = raw.unidades || {};
   const bloco = unidade?.blocos || {};
-  const morador = raw.moradores || {};
-  const profile = morador?.profiles || {};
+  const profile = moradorData?.profile || {};
   
   return {
     ...raw,
@@ -195,6 +261,7 @@ function transformEncomenda(raw) {
     
     // Unidade/Bloco
     numero_unidade: unidade.numero || '',
-    bloco_nome: bloco.nome || ''
+    bloco_nome: bloco.nome || '',
+    condominio_id: bloco.condominio_id || raw.condominio_id
   };
 }

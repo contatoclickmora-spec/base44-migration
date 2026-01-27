@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from "@/api/base44Client";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -110,6 +111,7 @@ const TabContent = ({ title, users, type, onAdd, onToggleStatus, onDelete, ...pr
 export default function GestaoCondominios({ userType }) {
   const [condominios, setCondominios] = useState([]);
   const [moradores, setMoradores] = useState([]);
+  const [userRoles, setUserRoles] = useState([]);
   const [residencias, setResidencias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -121,7 +123,7 @@ export default function GestaoCondominios({ userType }) {
   const [addingUserType, setAddingUserType] = useState(null);
   const [isCreateCondominioOpen, setIsCreateCondominioOpen] = useState(false);
 
-  // Função de carregamento de dados - SEM dependências para evitar loops
+  // Função de carregamento de dados
   const loadData = async () => {
     try {
       const isInitialLoad = loading;
@@ -135,11 +137,17 @@ export default function GestaoCondominios({ userType }) {
         base44.entities.Residencia.list()
       ]);
       
+      // Load user_roles separately to get user types
+      const { data: roles } = await supabase
+        .from('user_roles')
+        .select('user_id, role, condominio_id');
+      
       console.log(`✅ Dados carregados: ${condos.length} condomínios, ${mors.length} moradores`);
       
       setCondominios(condos);
       setMoradores(mors);
       setResidencias(res);
+      setUserRoles(roles || []);
       
       // Se ainda não tem condomínio selecionado, selecionar o primeiro
       if (!selectedCondominio && condos.length > 0) {
@@ -173,12 +181,21 @@ export default function GestaoCondominios({ userType }) {
     c.nome.toLowerCase().includes(searchTerm.toLowerCase())
   );
   
+  // Helper to get user role in a condominio
+  const getUserRoleInCondominio = (userId, condominioId) => {
+    const role = userRoles.find(r => r.user_id === userId && r.condominio_id === condominioId);
+    return role?.role || 'morador';
+  };
+  
   const moradoresDoCondominio = selectedCondominio
-    ? moradores.filter(m => m.condominio_id === selectedCondominio.id)
+    ? moradores.filter(m => m.condominio_id === selectedCondominio.id).map(m => ({
+        ...m,
+        tipo_usuario: getUserRoleInCondominio(m.user_id, selectedCondominio.id)
+      }))
     : [];
 
-  const sindicos = moradoresDoCondominio.filter(m => m.tipo_usuario === 'administrador');
-  const porteiros = moradoresDoCondominio.filter(m => m.tipo_usuario === 'porteiro');
+  const sindicos = moradoresDoCondominio.filter(m => m.tipo_usuario === 'admin');
+  const porteiros = moradoresDoCondominio.filter(m => m.tipo_usuario === 'portaria');
   const moradoresNormais = moradoresDoCondominio.filter(m => m.tipo_usuario === 'morador');
 
   const handleToggleStatus = async (user, newStatus) => {
