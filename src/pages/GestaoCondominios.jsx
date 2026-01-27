@@ -32,9 +32,10 @@ const UserCard = ({ user, type, onEdit, onDelete, onDefineSupremo, isSupremo, us
 
   const getStatusColor = (status) => {
     switch(status) {
-      case 'ativo': return 'bg-green-100 text-green-800';
-      case 'inativo': return 'bg-red-100 text-red-800';
+      case 'aprovado': return 'bg-green-100 text-green-800';
+      case 'inativo': return 'bg-gray-100 text-gray-800';
       case 'pendente': return 'bg-yellow-100 text-yellow-800';
+      case 'rejeitado': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -57,7 +58,7 @@ const UserCard = ({ user, type, onEdit, onDelete, onDefineSupremo, isSupremo, us
       <div className="flex gap-2">
         {userType === 'admin_master' && (
           <>
-            {user.status === 'ativo' ? (
+            {user.status === 'aprovado' ? (
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -70,7 +71,7 @@ const UserCard = ({ user, type, onEdit, onDelete, onDefineSupremo, isSupremo, us
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={() => onToggleStatus(user, 'ativo')}
+                onClick={() => onToggleStatus(user, 'aprovado')}
                 className="text-green-600 hover:bg-green-50"
               >
                 Ativar
@@ -199,13 +200,21 @@ export default function GestaoCondominios({ userType }) {
   const moradoresNormais = moradoresDoCondominio.filter(m => m.tipo_usuario === 'morador');
 
   const handleToggleStatus = async (user, newStatus) => {
-    if (!window.confirm(`Tem certeza que deseja ${newStatus === 'ativo' ? 'ativar' : 'desativar'} ${user.nome}?`)) {
+    // Mapear para valores válidos do enum resident_status
+    const statusMap = {
+      'ativo': 'aprovado',
+      'aprovado': 'aprovado',
+      'inativo': 'inativo'
+    };
+    const statusFinal = statusMap[newStatus] || newStatus;
+    
+    if (!window.confirm(`Tem certeza que deseja ${statusFinal === 'aprovado' ? 'ativar' : 'desativar'} ${user.nome}?`)) {
       return;
     }
 
     try {
-      await base44.entities.Morador.update(user.id, { status: newStatus });
-      alert(`Status de ${user.nome} atualizado para ${newStatus}!`);
+      await base44.entities.Morador.update(user.id, { status: statusFinal });
+      alert(`Status de ${user.nome} atualizado para ${statusFinal}!`);
       await loadData();
     } catch(err) {
       alert("Erro ao atualizar status.");
@@ -516,7 +525,7 @@ export default function GestaoCondominios({ userType }) {
                 <TabsContent value="moradores" className="pt-4">
                   <div className="mb-4 bg-gray-100 p-3 rounded-lg">
                     <p>
-                      <span className="font-bold">{moradoresNormais.filter(m => m.status === 'ativo').length}</span> moradores ativos de 
+                      <span className="font-bold">{moradoresNormais.filter(m => m.status === 'aprovado').length}</span> moradores ativos de 
                       <span className="font-bold"> {selectedCondominio.limite_moradores}</span> permitidos no plano.
                     </p>
                   </div>

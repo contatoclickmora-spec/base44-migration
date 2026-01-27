@@ -248,7 +248,7 @@ export default function AdminMaster({ userType }) { // userType prop is now unus
   const condominiosAtivosMesPassado = Math.floor(condominiosAtivos * 0.85);
   const variacaoCondominios = calcularVariacao(condominiosAtivos, condominiosAtivosMesPassado);
 
-  const moradoresAtivos = moradores.filter(m => m.status === 'aprovado' || m.status === 'ativo').length;
+  const moradoresAtivos = moradores.filter(m => m.status === 'aprovado').length;
   const moradoresAtivosMesPassado = Math.floor(moradoresAtivos * 0.85);
   const variacaoMoradores = calcularVariacao(moradoresAtivos, moradoresAtivosMesPassado);
 

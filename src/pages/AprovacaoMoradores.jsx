@@ -117,7 +117,7 @@ export default function AprovacaoMoradoresPage() {
       const moradoresValidados = moradoresDoCondominio.filter(m => m.condominio_id === userCondominioId);
       
       const moradoresAtivosNoCondominio = moradoresValidados.filter(
-        m => m.tipo_usuario === 'morador' && m.status === 'ativo'
+        m => m.tipo_usuario === 'morador' && m.status === 'aprovado'
       ).length;
 
       const limite = condominioAtual.limite_moradores || 30;

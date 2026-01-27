@@ -43,9 +43,10 @@ export default function UsuarioCard({
 
   const getStatusColor = (status) => {
     switch(status) {
-      case 'ativo': return 'bg-green-100 text-green-800 border-green-200';
-      case 'inativo': return 'bg-red-100 text-red-800 border-red-200';
+      case 'aprovado': return 'bg-green-100 text-green-800 border-green-200';
+      case 'inativo': return 'bg-gray-100 text-gray-800 border-gray-200';
       case 'pendente': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'rejeitado': return 'bg-red-100 text-red-800 border-red-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
@@ -175,11 +176,11 @@ export default function UsuarioCard({
               <DropdownMenuSeparator />
 
               <DropdownMenuItem 
-                onClick={() => onToggleStatus(usuario, usuario.status === 'ativo' ? 'inativo' : 'ativo')}
-                className={usuario.status === 'ativo' ? 'text-orange-600' : 'text-green-600'}
+                onClick={() => onToggleStatus(usuario, usuario.status === 'aprovado' ? 'inativo' : 'aprovado')}
+                className={usuario.status === 'aprovado' ? 'text-orange-600' : 'text-green-600'}
               >
                 <Power className="w-4 h-4 mr-2" />
-                {usuario.status === 'ativo' ? 'Desativar' : 'Ativar'}
+                {usuario.status === 'aprovado' ? 'Desativar' : 'Ativar'}
               </DropdownMenuItem>
 
               <DropdownMenuSeparator />

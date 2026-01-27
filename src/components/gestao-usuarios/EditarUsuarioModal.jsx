@@ -25,7 +25,7 @@ export default function EditarUsuarioModal({ usuario, condominios, residencias, 
       email: usuario.email || "",
       telefone: usuario.telefone || "",
       tipo_usuario: usuario.tipo_usuario || "morador",
-      status: usuario.status || "ativo",
+      status: usuario.status || "pendente", // Valores válidos: pendente, aprovado, rejeitado, inativo
       condominio_id: usuario.condominio_id || "",
       residencia_id: usuario.residencia_id || "",
       apelido_endereco: usuario.apelido_endereco || ""
@@ -214,8 +214,9 @@ export default function EditarUsuarioModal({ usuario, condominios, residencias, 
           <DialogTitle className="text-2xl flex items-center gap-2">
             Editar Usuário: {usuario.nome}
             <Badge className={
-              dados.usuario.status === 'ativo' ? 'bg-green-100 text-green-800' :
-              dados.usuario.status === 'inativo' ? 'bg-red-100 text-red-800' :
+              dados.usuario.status === 'aprovado' ? 'bg-green-100 text-green-800' :
+              dados.usuario.status === 'inativo' ? 'bg-gray-100 text-gray-800' :
+              dados.usuario.status === 'rejeitado' ? 'bg-red-100 text-red-800' :
               'bg-yellow-100 text-yellow-800'
             }>
               {dados.usuario.status}
@@ -309,22 +310,28 @@ export default function EditarUsuarioModal({ usuario, condominios, residencias, 
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ativo">
+                    <SelectItem value="aprovado">
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                        Ativo
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="inativo">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                        Inativo
+                        Aprovado (Ativo)
                       </div>
                     </SelectItem>
                     <SelectItem value="pendente">
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
                         Pendente
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="inativo">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-gray-500"></div>
+                        Inativo
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="rejeitado">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                        Rejeitado
                       </div>
                     </SelectItem>
                   </SelectContent>

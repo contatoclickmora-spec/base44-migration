@@ -325,9 +325,10 @@ export default function GestaoUsuarios() {
                       </td>
                       <td className="p-3">
                         <Badge className={`${
-                          morador.status === 'ativo' ? 'bg-green-100 text-green-800' :
+                          morador.status === 'aprovado' ? 'bg-green-100 text-green-800' :
                           morador.status === 'pendente' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
+                          morador.status === 'rejeitado' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
                         } border-0`}>
                           {morador.status}
                         </Badge>
