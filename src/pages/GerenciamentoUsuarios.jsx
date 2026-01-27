@@ -52,134 +52,75 @@ export default function GerenciamentoUsuarios({ userType }) {
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
-    const abortController = new AbortController();
     loadData();
-    return () => abortController.abort();
   }, []);
 
-  const loadData = async (isRetry = false) => {
+  const loadData = async () => {
     try {
-      if (!isRetry) {
-        setLoading(true);
-        setError("");
-      }
+      setLoading(true);
+      setError("");
       
-      console.log("🔄 Carregando dados do sistema...");
+      console.log("🔄 Carregando dados (otimizado)...");
+      const startTime = performance.now();
 
-      // Verificar autenticação primeiro
-      let currentUser;
-      try {
-        currentUser = await User.me();
-        if (!currentUser) {
-          throw new Error("Usuário não autenticado");
-        }
-      } catch (authError) {
-        console.error("❌ Erro de autenticação:", authError);
-        setError("Erro de autenticação. Por favor, faça login novamente.");
+      // Verificar autenticação
+      const currentUser = await User.me();
+      if (!currentUser) {
+        setError("Usuário não autenticado");
         setLoading(false);
         return;
       }
 
-      // Carregar dados com timeout e retry
-      const loadWithRetry = async (loadFn, entityName, maxRetries = 3) => {
-        for (let i = 0; i < maxRetries; i++) {
-          try {
-            const result = await Promise.race([
-              loadFn(),
-              new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Timeout')), 10000)
-              )
-            ]);
-            return result;
-          } catch (err) {
-            console.error(`❌ Tentativa ${i + 1}/${maxRetries} falhou para ${entityName}:`, err);
-            if (i === maxRetries - 1) throw err;
-            // Aguardar antes de tentar novamente
-            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-          }
-        }
-      };
+      // CARREGAR TUDO EM PARALELO - muito mais rápido!
+      const [usuariosResult, rolesResult, condominiosResult, residenciasResult] = await Promise.allSettled([
+        Morador.list(),
+        supabase.from('user_roles').select('*').order('created_at', { ascending: false }),
+        Condominio.list(),
+        Residencia.list()
+      ]);
 
-      // Carregar entidades sequencialmente para evitar sobrecarga
-      let usuariosData = [];
-      let permissoesData = [];
-      let condominiosData = [];
-      let residenciasData = [];
+      const usuariosData = usuariosResult.status === 'fulfilled' ? usuariosResult.value : [];
+      const rolesData = rolesResult.status === 'fulfilled' ? (rolesResult.value.data || []) : [];
+      const condominiosData = condominiosResult.status === 'fulfilled' ? condominiosResult.value : [];
+      const residenciasData = residenciasResult.status === 'fulfilled' ? residenciasResult.value : [];
 
-      try {
-        console.log("📥 Carregando usuários...");
-        usuariosData = await loadWithRetry(() => Morador.list(), "Morador");
-        console.log(`✅ ${usuariosData.length} usuários carregados`);
-      } catch (err) {
-        console.error("❌ Erro ao carregar usuários:", err);
-        throw new Error("Falha ao carregar usuários");
-      }
-
-      try {
-        console.log("📥 Carregando permissões...");
-        permissoesData = await loadWithRetry(() => PermissoesUsuario.list(), "PermissoesUsuario");
-        console.log(`✅ ${permissoesData.length} permissões carregadas`);
-      } catch (err) {
-        console.error("⚠️ Erro ao carregar permissões:", err);
-        // Permissões não são críticas, continuar
-        permissoesData = [];
-      }
-
-      try {
-        console.log("📥 Carregando condomínios...");
-        condominiosData = await loadWithRetry(() => Condominio.list(), "Condominio");
-        console.log(`✅ ${condominiosData.length} condomínios carregados`);
-      } catch (err) {
-        console.error("❌ Erro ao carregar condomínios:", err);
-        throw new Error("Falha ao carregar condomínios");
-      }
-
-      try {
-        console.log("📥 Carregando residências...");
-        residenciasData = await loadWithRetry(() => Residencia.list(), "Residencia");
-        console.log(`✅ ${residenciasData.length} residências carregadas`);
-      } catch (err) {
-        console.error("⚠️ Erro ao carregar residências:", err);
-        // Residências não são críticas, continuar
-        residenciasData = [];
-      }
+      const duration = performance.now() - startTime;
+      console.log(`✅ Dados carregados em ${duration.toFixed(0)}ms:`, {
+        usuarios: usuariosData.length,
+        roles: rolesData.length,
+        condominios: condominiosData.length,
+        residencias: residenciasData.length
+      });
 
       setUsuarios(usuariosData);
-      setPermissoes(permissoesData);
+      setPermissoes(rolesData);
       setCondominios(condominiosData);
       setResidencias(residenciasData);
       setRetryCount(0);
 
-      console.log("✅ Todos os dados carregados com sucesso");
     } catch (err) {
       console.error("❌ Erro ao carregar dados:", err);
-      
-      const errorMessage = err.message || "Erro ao carregar dados do sistema";
-      
-      if (retryCount < 2) {
-        setError(`${errorMessage}. Tentando novamente...`);
-        setRetryCount(prev => prev + 1);
-        // Tentar novamente após 2 segundos
-        setTimeout(() => loadData(true), 2000);
-      } else {
-        setError(`${errorMessage}. Por favor, recarregue a página.`);
-      }
+      setError("Erro ao carregar dados. Recarregue a página.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Enriquecer dados do usuário com permissões
+  // Enriquecer dados do usuário com roles
   const getUsuarioCompleto = (usuario) => {
-    const permissao = permissoes.find(p => p.morador_id === usuario.id);
+    const role = permissoes.find(p => p.user_id === usuario.user_id);
     const condominio = condominios.find(c => c.id === usuario.condominio_id);
-    const residencia = residencias.find(r => r.id === usuario.residencia_id);
+    const residencia = residencias.find(r => r.id === usuario.unidade_id);
+    
+    // Mapear role para tipo_usuario
+    const roleToTipo = { master: 'administrador', admin: 'administrador', portaria: 'porteiro', morador: 'morador' };
     
     return {
       ...usuario,
-      permissoes_detalhadas: permissao,
-      condominio_nome: condominio?.nome || "Não definido",
-      residencia_info: residencia ? `${residencia.identificador_principal}${residencia.complemento ? ', ' + residencia.complemento : ''}` : null
+      tipo_usuario: roleToTipo[role?.role] || 'morador',
+      role_info: role,
+      condominio_nome: condominio?.nome || usuario.condominio_nome || "Não definido",
+      residencia_info: residencia ? `${residencia.numero}` : usuario.apelido_endereco || null
     };
   };
 

@@ -1,36 +1,30 @@
 import { supabase } from '@/integrations/supabase/client';
 
+// Cache for profiles to avoid repeated fetches
+let profilesCache = null;
+let profilesCacheTime = 0;
+const CACHE_TTL = 60000; // 1 minute cache
+
 /**
- * Morador entity with proper joins to get all related data
- * Schema: moradores -> unidades -> blocos -> condominios
- * Profile data comes from: profiles (joined via user_id)
+ * Morador entity with optimized queries
  */
 export const Morador = {
   /**
-   * List all moradores with full data (profile, unidade, bloco, condominio)
+   * List all moradores with full data - OPTIMIZED
    */
   async list(sort = '-created_at') {
     const ascending = !sort.startsWith('-');
     const field = sort.replace(/^-/, '');
     
-    // First get moradores with unidades join
+    // Single optimized query with nested joins
     const { data: moradoresData, error: moradoresError } = await supabase
       .from('moradores')
       .select(`
-        *,
+        id, user_id, unidade_id, status, is_proprietario, 
+        data_entrada, data_saida, created_at, updated_at,
         unidades:unidade_id (
-          id,
-          numero,
-          tipo,
-          blocos:bloco_id (
-            id,
-            nome,
-            condominio_id,
-            condominios:condominio_id (
-              id,
-              nome
-            )
-          )
+          id, numero, tipo,
+          blocos:bloco_id (id, nome, condominio_id)
         )
       `)
       .order(field, { ascending });
@@ -38,27 +32,78 @@ export const Morador = {
     if (moradoresError) throw moradoresError;
     if (!moradoresData || moradoresData.length === 0) return [];
 
-    // Get user_ids to fetch profiles separately
-    const userIds = [...new Set(moradoresData.map(m => m.user_id).filter(Boolean))];
-    
-    // Fetch profiles separately (no FK constraint needed)
-    const { data: profilesData } = await supabase
-      .from('profiles')
-      .select('user_id, nome, telefone, cpf, avatar_url')
-      .in('user_id', userIds);
-    
-    // Create profiles map
-    const profilesMap = {};
-    (profilesData || []).forEach(p => {
-      profilesMap[p.user_id] = p;
-    });
+    // Get profiles with cache
+    const profiles = await this._getProfilesMap(moradoresData.map(m => m.user_id).filter(Boolean));
 
-    // Merge profiles into moradores
-    return moradoresData.map(m => transformMorador(m, profilesMap[m.user_id]));
+    return moradoresData.map(m => transformMorador(m, profiles[m.user_id]));
   },
 
   /**
-   * Filter moradores by conditions
+   * Get profiles map with caching
+   */
+  async _getProfilesMap(userIds) {
+    if (!userIds || userIds.length === 0) return {};
+    
+    const uniqueIds = [...new Set(userIds)];
+    const now = Date.now();
+    
+    // Use cache if valid
+    if (profilesCache && (now - profilesCacheTime) < CACHE_TTL) {
+      const cached = {};
+      const missing = [];
+      
+      uniqueIds.forEach(id => {
+        if (profilesCache[id]) {
+          cached[id] = profilesCache[id];
+        } else {
+          missing.push(id);
+        }
+      });
+      
+      if (missing.length === 0) return cached;
+      
+      // Fetch only missing
+      const { data } = await supabase
+        .from('profiles')
+        .select('user_id, nome, telefone, cpf, avatar_url')
+        .in('user_id', missing);
+      
+      (data || []).forEach(p => {
+        cached[p.user_id] = p;
+        profilesCache[p.user_id] = p;
+      });
+      
+      return cached;
+    }
+    
+    // Fresh fetch
+    const { data } = await supabase
+      .from('profiles')
+      .select('user_id, nome, telefone, cpf, avatar_url')
+      .in('user_id', uniqueIds);
+    
+    const map = {};
+    profilesCache = {};
+    profilesCacheTime = now;
+    
+    (data || []).forEach(p => {
+      map[p.user_id] = p;
+      profilesCache[p.user_id] = p;
+    });
+    
+    return map;
+  },
+
+  /**
+   * Clear profiles cache (call after updates)
+   */
+  clearCache() {
+    profilesCache = null;
+    profilesCacheTime = 0;
+  },
+
+  /**
+   * Filter moradores - OPTIMIZED
    */
   async filter(filters = {}, sort = '-created_at', limit = null) {
     const ascending = !sort.startsWith('-');
@@ -67,59 +112,32 @@ export const Morador = {
     let query = supabase
       .from('moradores')
       .select(`
-        *,
+        id, user_id, unidade_id, status, is_proprietario,
+        data_entrada, data_saida, created_at, updated_at,
         unidades:unidade_id (
-          id,
-          numero,
-          tipo,
-          blocos:bloco_id (
-            id,
-            nome,
-            condominio_id,
-            condominios:condominio_id (
-              id,
-              nome
-            )
-          )
+          id, numero, tipo,
+          blocos:bloco_id (id, nome, condominio_id)
         )
       `);
 
-    // Apply direct filters (skip condominio_id - handled after)
+    // Apply direct filters
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined && value !== null && key !== 'condominio_id') {
-        if (Array.isArray(value)) {
-          query = query.in(key, value);
-        } else {
-          query = query.eq(key, value);
-        }
+        query = Array.isArray(value) ? query.in(key, value) : query.eq(key, value);
       }
     });
     
     query = query.order(field, { ascending });
-    
-    if (limit) {
-      query = query.limit(limit);
-    }
+    if (limit) query = query.limit(limit);
     
     const { data: moradoresData, error } = await query;
     if (error) throw error;
     if (!moradoresData || moradoresData.length === 0) return [];
 
-    // Get profiles separately
-    const userIds = [...new Set(moradoresData.map(m => m.user_id).filter(Boolean))];
-    const { data: profilesData } = await supabase
-      .from('profiles')
-      .select('user_id, nome, telefone, cpf, avatar_url')
-      .in('user_id', userIds);
+    const profiles = await this._getProfilesMap(moradoresData.map(m => m.user_id).filter(Boolean));
+    let results = moradoresData.map(m => transformMorador(m, profiles[m.user_id]));
     
-    const profilesMap = {};
-    (profilesData || []).forEach(p => {
-      profilesMap[p.user_id] = p;
-    });
-
-    let results = moradoresData.map(m => transformMorador(m, profilesMap[m.user_id]));
-    
-    // Filter by condominio_id if specified
+    // Filter by condominio_id post-query if specified
     if (filters.condominio_id) {
       results = results.filter(m => m.condominio_id === filters.condominio_id);
     }
@@ -134,20 +152,11 @@ export const Morador = {
     const { data: moradorData, error } = await supabase
       .from('moradores')
       .select(`
-        *,
+        id, user_id, unidade_id, status, is_proprietario,
+        data_entrada, data_saida, created_at, updated_at,
         unidades:unidade_id (
-          id,
-          numero,
-          tipo,
-          blocos:bloco_id (
-            id,
-            nome,
-            condominio_id,
-            condominios:condominio_id (
-              id,
-              nome
-            )
-          )
+          id, numero, tipo,
+          blocos:bloco_id (id, nome, condominio_id)
         )
       `)
       .eq('id', id)
@@ -156,18 +165,8 @@ export const Morador = {
     if (error) throw error;
     if (!moradorData) return null;
 
-    // Get profile separately
-    let profile = null;
-    if (moradorData.user_id) {
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('user_id, nome, telefone, cpf, avatar_url')
-        .eq('user_id', moradorData.user_id)
-        .maybeSingle();
-      profile = profileData;
-    }
-
-    return transformMorador(moradorData, profile);
+    const profiles = await this._getProfilesMap([moradorData.user_id].filter(Boolean));
+    return transformMorador(moradorData, profiles[moradorData.user_id]);
   },
 
   /**
@@ -177,20 +176,11 @@ export const Morador = {
     const { data: moradorData, error } = await supabase
       .from('moradores')
       .select(`
-        *,
+        id, user_id, unidade_id, status, is_proprietario,
+        data_entrada, data_saida, created_at, updated_at,
         unidades:unidade_id (
-          id,
-          numero,
-          tipo,
-          blocos:bloco_id (
-            id,
-            nome,
-            condominio_id,
-            condominios:condominio_id (
-              id,
-              nome
-            )
-          )
+          id, numero, tipo,
+          blocos:bloco_id (id, nome, condominio_id)
         )
       `)
       .eq('user_id', userId)
@@ -199,20 +189,12 @@ export const Morador = {
     if (error) throw error;
     if (!moradorData) return null;
 
-    // Get profile separately
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('user_id, nome, telefone, cpf, avatar_url')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    return transformMorador(moradorData, profileData);
+    const profiles = await this._getProfilesMap([userId]);
+    return transformMorador(moradorData, profiles[userId]);
   },
 
-  /**
-   * Create new morador
-   */
   async create(record) {
+    this.clearCache();
     const { data, error } = await supabase
       .from('moradores')
       .insert({
@@ -230,18 +212,13 @@ export const Morador = {
     return data;
   },
 
-  /**
-   * Update morador
-   */
   async update(id, updates) {
-    // Filter only valid morador fields
+    this.clearCache();
     const validFields = ['unidade_id', 'status', 'is_proprietario', 'data_entrada', 'data_saida'];
     const filteredUpdates = {};
     
     Object.entries(updates).forEach(([key, value]) => {
-      if (validFields.includes(key)) {
-        filteredUpdates[key] = value;
-      }
+      if (validFields.includes(key)) filteredUpdates[key] = value;
     });
     
     const { data, error } = await supabase
@@ -255,10 +232,8 @@ export const Morador = {
     return data;
   },
 
-  /**
-   * Delete morador
-   */
   async delete(id) {
+    this.clearCache();
     const { error } = await supabase
       .from('moradores')
       .delete()
@@ -270,20 +245,15 @@ export const Morador = {
 };
 
 /**
- * Transform raw morador data to include flattened fields for compatibility
- * @param {Object} raw - Raw morador data from database
- * @param {Object} profile - Profile data fetched separately
+ * Transform raw morador data
  */
 function transformMorador(raw, profile = null) {
   if (!raw) return null;
   
-  const profileData = profile || {};
   const unidade = raw.unidades || {};
   const bloco = unidade?.blocos || {};
-  const condominio = bloco?.condominios || {};
   
   return {
-    // Original morador fields
     id: raw.id,
     user_id: raw.user_id,
     unidade_id: raw.unidade_id,
@@ -294,28 +264,23 @@ function transformMorador(raw, profile = null) {
     created_at: raw.created_at,
     updated_at: raw.updated_at,
     
-    // Flattened profile fields (for compatibility)
-    nome: profileData.nome || 'Sem nome',
-    telefone: profileData.telefone || '',
-    cpf: profileData.cpf || '',
-    avatar_url: profileData.avatar_url || '',
-    email: profileData.email || '',
+    // Profile fields
+    nome: profile?.nome || 'Sem nome',
+    telefone: profile?.telefone || '',
+    cpf: profile?.cpf || '',
+    avatar_url: profile?.avatar_url || '',
+    email: profile?.email || '',
     
-    // Flattened unidade/bloco/condominio fields
+    // Location fields
     numero_unidade: unidade.numero || '',
     tipo_unidade: unidade.tipo || 'apartamento',
     bloco_id: bloco.id || null,
     bloco_nome: bloco.nome || '',
     condominio_id: bloco.condominio_id || null,
-    condominio_nome: condominio.nome || '',
     
-    // Computed fields for legacy compatibility
+    // Computed
     apelido_endereco: `${bloco.nome || ''} - ${unidade.numero || ''}`.trim(),
     abreviacao: `${bloco.nome || ''} ${unidade.numero || ''}`.trim(),
-    tipo_usuario: 'morador', // Default tipo
-    
-    // Keep raw nested data
-    _raw: raw,
-    _profile: profileData
+    tipo_usuario: 'morador'
   };
 }
