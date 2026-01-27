@@ -1,9 +1,9 @@
-import { SessionCache, safeAuthCall, safeEntityCall } from "./apiCache";
+import { supabase } from "@/integrations/supabase/client";
+import { SessionCache } from "./apiCache";
 
 /**
- * SISTEMA DE AUTENTICAÇÃO E ROLE - UTILITÁRIO CENTRAL
- * Otimizado para carregamento rápido com proteção contra Network Errors
- * VERSÃO OTIMIZADA - delays reduzidos
+ * SISTEMA DE AUTENTICAÇÃO E ROLE - SUPABASE
+ * Otimizado para carregamento rápido com Supabase Auth
  */
 
 let _cachedUserRole = null;
@@ -15,7 +15,7 @@ let _isLoading = false;
 let _loadingPromise = null;
 
 /**
- * Obtém o tipo de usuário com retry automático e cache
+ * Obtém o tipo de usuário com cache
  */
 export async function getUserRole(forceRefresh = false) {
   try {
@@ -28,7 +28,7 @@ export async function getUserRole(forceRefresh = false) {
     // Cache em memória
     const now = Date.now();
     if (!forceRefresh && _cachedUserRole && _cachedTimestamp && (now - _cachedTimestamp < CACHE_DURATION)) {
-      console.log('[AUTH] ✅ Usando cache em memória (válido por mais', Math.floor((CACHE_DURATION - (now - _cachedTimestamp)) / 1000), 'segundos)');
+      console.log('[AUTH] ✅ Usando cache em memória');
       return _cachedUserRole;
     }
 
@@ -45,7 +45,7 @@ export async function getUserRole(forceRefresh = false) {
 
     // Iniciar carregamento
     _isLoading = true;
-    _loadingPromise = loadUserRoleFromServer();
+    _loadingPromise = loadUserRoleFromSupabase();
 
     const result = await _loadingPromise;
     
@@ -68,43 +68,27 @@ export async function getUserRole(forceRefresh = false) {
 }
 
 /**
- * Função auxiliar para carregar role do servidor
+ * Função auxiliar para carregar role do Supabase
  */
-async function loadUserRoleFromServer() {
+async function loadUserRoleFromSupabase() {
   try {
-    console.log('[AUTH] 🔄 Carregando role do servidor...');
+    console.log('[AUTH] 🔄 Carregando role do Supabase...');
 
-    // Delay inicial reduzido
-    await new Promise(resolve => setTimeout(resolve, 300)); // 300ms inicial
-
-    // Usar safeAuthCall para retry automático
-    let user;
-    try {
-      user = await safeAuthCall('me');
-    } catch (err) {
-      console.error('[AUTH] ❌ Erro ao obter usuário:', err);
-      
-      // Se é erro de autenticação, redirecionar para login
-      const errorMsg = err?.message || '';
-      if (errorMsg.includes('must be logged in') || errorMsg.includes('Unauthorized')) {
-        console.log('[AUTH] 🔐 Redirecionando para login...');
-        try {
-          const { base44 } = await import('@/api/base44Client');
-          await base44.auth.redirectToLogin();
-        } catch (redirectErr) {
-          window.location.href = '/login';
-        }
-      }
-      
+    // Obter sessão atual
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError) {
+      console.error('[AUTH] ❌ Erro ao obter sessão:', sessionError);
       return { 
         isAuthenticated: false, 
         userType: null,
         needsLogin: true,
-        error: errorMsg.includes('must be logged in') ? 'Sessão expirada' : 'Erro de conexão'
+        error: 'Erro ao verificar sessão'
       };
     }
-    
-    if (!user || !user.email) {
+
+    if (!session?.user) {
+      console.log('[AUTH] 🔐 Usuário não autenticado');
       return { 
         isAuthenticated: false, 
         userType: null,
@@ -112,102 +96,203 @@ async function loadUserRoleFromServer() {
       };
     }
 
-    // Admin Master - retorno rápido
-    if (user.role === 'admin') {
+    const user = session.user;
+    console.log('[AUTH] ✅ Usuário autenticado:', user.email);
+
+    // Buscar roles do usuário
+    const { data: userRoles, error: rolesError } = await supabase
+      .from('user_roles')
+      .select(`
+        id,
+        role,
+        condominio_id,
+        condominios:condominio_id (
+          id,
+          nome
+        )
+      `)
+      .eq('user_id', user.id);
+
+    if (rolesError) {
+      console.error('[AUTH] ❌ Erro ao buscar roles:', rolesError);
+    }
+
+    // Buscar perfil do usuário
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+
+    if (profileError && profileError.code !== 'PGRST116') {
+      console.error('[AUTH] ⚠️ Erro ao buscar perfil:', profileError);
+    }
+
+    // Verificar se é master
+    if (userRoles?.some(r => r.role === 'master')) {
+      console.log('[AUTH] ✅ Usuário é MASTER');
+      const masterRole = userRoles.find(r => r.role === 'master');
       const role = {
         isAuthenticated: true,
         userType: 'admin_master',
-        user: user,
+        user: {
+          id: user.id,
+          email: user.email,
+          full_name: profile?.nome || user.email,
+          role: 'master'
+        },
         email: user.email,
-        name: user.full_name,
-        isAdminMaster: true
+        name: profile?.nome || user.email,
+        isAdminMaster: true,
+        condominioId: masterRole?.condominio_id,
+        profile: profile
       };
       cacheRole(role);
       return role;
     }
 
-    // Delay entre requisições reduzido
-    await new Promise(resolve => setTimeout(resolve, 300)); // 300ms
+    // Verificar se é admin
+    if (userRoles?.some(r => r.role === 'admin')) {
+      console.log('[AUTH] ✅ Usuário é ADMIN');
+      const adminRole = userRoles.find(r => r.role === 'admin');
+      
+      // Buscar dados do morador se existir
+      const { data: morador } = await supabase
+        .from('moradores')
+        .select(`
+          *,
+          unidade:unidade_id (
+            id,
+            numero,
+            bloco:bloco_id (
+              id,
+              nome,
+              condominio_id
+            )
+          )
+        `)
+        .eq('user_id', user.id)
+        .single();
 
-    // Buscar morador com retry
-    let todosMoradores;
-    try {
-      todosMoradores = await safeEntityCall('Morador', 'list');
-    } catch (err) {
-      console.error('[AUTH] ❌ Erro ao carregar moradores após todas as tentativas:', err);
-      return {
+      const role = {
         isAuthenticated: true,
-        userType: 'erro_carregar',
-        user: user,
-        error: 'Erro ao carregar dados. Por favor, recarregue a página.'
+        userType: 'administrador',
+        user: {
+          id: user.id,
+          email: user.email,
+          full_name: profile?.nome || user.email,
+          role: 'admin'
+        },
+        email: user.email,
+        name: profile?.nome || user.email,
+        isAdminMaster: false,
+        condominioId: adminRole?.condominio_id,
+        morador: morador ? {
+          ...morador,
+          condominio_id: morador.unidade?.bloco?.condominio_id || adminRole?.condominio_id,
+          nome: profile?.nome
+        } : {
+          condominio_id: adminRole?.condominio_id,
+          nome: profile?.nome
+        },
+        profile: profile
       };
+      cacheRole(role);
+      return role;
     }
 
-    const moradorLogado = todosMoradores.find(
-      m => m.email && m.email.trim().toLowerCase() === user.email.trim().toLowerCase()
-    );
-
-    if (!moradorLogado) {
-      return {
+    // Verificar se é portaria
+    if (userRoles?.some(r => r.role === 'portaria')) {
+      console.log('[AUTH] ✅ Usuário é PORTARIA');
+      const portariaRole = userRoles.find(r => r.role === 'portaria');
+      const role = {
         isAuthenticated: true,
-        userType: 'sem_cadastro',
-        user: user,
-        error: 'Cadastro não encontrado no sistema'
+        userType: 'porteiro',
+        user: {
+          id: user.id,
+          email: user.email,
+          full_name: profile?.nome || user.email,
+          role: 'portaria'
+        },
+        email: user.email,
+        name: profile?.nome || user.email,
+        isAdminMaster: false,
+        condominioId: portariaRole?.condominio_id,
+        morador: {
+          condominio_id: portariaRole?.condominio_id,
+          nome: profile?.nome
+        },
+        profile: profile
       };
+      cacheRole(role);
+      return role;
     }
 
-    // Verificações de status
-    if (moradorLogado.status === 'pendente') {
-      return {
+    // Verificar se é morador
+    if (userRoles?.some(r => r.role === 'morador')) {
+      console.log('[AUTH] ✅ Usuário é MORADOR');
+      const moradorRole = userRoles.find(r => r.role === 'morador');
+      
+      // Buscar dados completos do morador
+      const { data: morador } = await supabase
+        .from('moradores')
+        .select(`
+          *,
+          unidade:unidade_id (
+            id,
+            numero,
+            bloco:bloco_id (
+              id,
+              nome,
+              condominio_id
+            )
+          )
+        `)
+        .eq('user_id', user.id)
+        .single();
+
+      const role = {
         isAuthenticated: true,
-        userType: 'pendente_aprovacao',
-        user: user,
-        morador: moradorLogado,
-        error: 'Cadastro aguardando aprovação'
+        userType: 'morador',
+        user: {
+          id: user.id,
+          email: user.email,
+          full_name: profile?.nome || user.email,
+          role: 'morador'
+        },
+        email: user.email,
+        name: profile?.nome || user.email,
+        isAdminMaster: false,
+        condominioId: morador?.unidade?.bloco?.condominio_id || moradorRole?.condominio_id,
+        morador: morador ? {
+          ...morador,
+          condominio_id: morador.unidade?.bloco?.condominio_id || moradorRole?.condominio_id,
+          nome: profile?.nome
+        } : null,
+        profile: profile
       };
+      cacheRole(role);
+      return role;
     }
 
-    if (moradorLogado.status === 'inativo') {
-      return {
-        isAuthenticated: true,
-        userType: 'inativo',
-        user: user,
-        morador: moradorLogado,
-        error: 'Cadastro inativo'
-      };
-    }
-
-    if (!moradorLogado.condominio_id) {
-      return {
-        isAuthenticated: true,
-        userType: 'sem_condominio',
-        user: user,
-        morador: moradorLogado,
-        error: 'Usuário não está vinculado a nenhum condomínio'
-      };
-    }
-
-    // Role válida
-    const userType = moradorLogado.tipo_usuario;
-    
-    const role = {
+    // Usuário sem role definida
+    console.log('[AUTH] ⚠️ Usuário sem role definida');
+    return {
       isAuthenticated: true,
-      userType: userType,
-      user: user,
-      morador: moradorLogado,
-      condominioId: moradorLogado.condominio_id,
-      isAdminMaster: false
+      userType: 'sem_role',
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: profile?.nome || user.email
+      },
+      email: user.email,
+      name: profile?.nome || user.email,
+      error: 'Usuário não tem permissões configuradas',
+      profile: profile
     };
 
-    // Cache agressivo
-    cacheRole(role);
-
-    console.log('[AUTH] ✅ Role carregada com sucesso:', userType);
-
-    return role;
-
   } catch (error) {
-    console.error("❌ [AUTH] Erro crítico ao carregar do servidor:", error);
+    console.error("❌ [AUTH] Erro crítico ao carregar do Supabase:", error);
     throw error;
   }
 }
@@ -219,7 +304,7 @@ function cacheRole(role) {
   _cachedUserRole = role;
   _cachedTimestamp = Date.now();
   SessionCache.set('user_role', role, 15); // 15 minutos
-  console.log('[AUTH] 💾 Role salva em cache com expiração de 15 minutos');
+  console.log('[AUTH] 💾 Role salva em cache');
 }
 
 /**
