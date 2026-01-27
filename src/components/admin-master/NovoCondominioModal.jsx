@@ -195,15 +195,6 @@ export default function NovoCondominioModal({ onClose, onSave }) {
             </Button>
           </div>
         </CardContent>
-            <Button variant="outline" onClick={onClose} className="flex-1">
-              Cancelar
-            </Button>
-            <Button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600">
-              <Plus className="w-4 h-4 mr-2" />
-              {saving ? 'Criando...' : 'Criar Condomínio'}
-            </Button>
-          </div>
-        </CardContent>
       </Card>
     </div>
   );
