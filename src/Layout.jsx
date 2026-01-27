@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/integrations/supabase/client";
 import { createPageUrl } from "@/utils";
 import { getUserRole, clearAuthCache } from "@/components/utils/authUtils";
 import {
@@ -134,7 +134,7 @@ function LayoutContent({ children, currentPageName }) {
   const handleLogout = async () => {
     try {
       clearAuthCache();
-      await base44.auth.logout();
+      await supabase.auth.signOut();
       window.location.href = '/';
     } catch (err) {
       clearAuthCache(); 
