@@ -174,7 +174,7 @@ export default function DashboardMorador() {
         if (abortController.signal.aborted) return;
 
         if (!role || !role.isAuthenticated) {
-          window.location.href = '/Auth';
+          window.location.href = '/login';
           return;
         }
 

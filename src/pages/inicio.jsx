@@ -155,7 +155,7 @@ export default function Inicio() {
               <button onClick={() => scrollToSection('faq')} className="text-gray-600 hover:text-blue-600 transition-colors">
                 FAQ
               </button>
-              <Button onClick={() => window.location.href = createPageUrl('Auth')} variant="outline">
+              <Button onClick={() => window.location.href = createPageUrl('Dashboard')} variant="outline">
                 Entrar
               </Button>
               <Button onClick={() => scrollToSection('cadastro')} className="bg-blue-600 hover:bg-blue-700">
@@ -208,7 +208,7 @@ export default function Inicio() {
                   FAQ
                 </button>
                 <Button 
-                  onClick={() => window.location.href = createPageUrl('Auth')} 
+                  onClick={() => window.location.href = createPageUrl('Dashboard')} 
                   variant="outline" 
                   className="w-full"
                 >
