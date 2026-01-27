@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Morador } from "@/entities/Morador";
 import { Condominio } from "@/entities/Condominio";
-import { Residencia } from "@/entities/Residencia";
-import { User } from "@/entities/User";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,10 +8,11 @@ import { UserCheck, CheckCircle, XCircle, Clock, AlertTriangle, User as UserIcon
 import { motion, AnimatePresence } from "framer-motion";
 import AprovarMoradorModal from "../components/aprovacao/AprovarMoradorModal";
 import { logAction } from "../components/utils/logger";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function AprovacaoMoradoresPage() {
   const [moradoresPendentes, setMoradoresPendentes] = useState([]);
-  const [residencias, setResidencias] = useState([]);
+  const [unidades, setUnidades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
@@ -34,50 +32,84 @@ export default function AprovacaoMoradoresPage() {
       setLoading(true);
       setError('');
       
-      const user = await User.me();
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
       
-      if (!user || !user.email) {
+      if (!user) {
         setError("Usuário não autenticado");
         setLoading(false);
         return;
       }
       
-      const todosMoradores = await Morador.list();
-      const moradorLogado = todosMoradores.find(
-        m => m.email && m.email.trim().toLowerCase() === user.email.trim().toLowerCase()
-      );
+      // Get user's role and condominio from user_roles
+      const { data: userRoles, error: rolesError } = await supabase
+        .from('user_roles')
+        .select('role, condominio_id')
+        .eq('user_id', user.id);
       
-      if (!moradorLogado || !moradorLogado.condominio_id) {
-        setError("Erro: Síndico não está vinculado a um condomínio.");
+      if (rolesError || !userRoles || userRoles.length === 0) {
+        setError("Erro: Usuário não possui permissões configuradas.");
         setLoading(false);
         return;
       }
-
-      const condominioId = moradorLogado.condominio_id;
+      
+      // Find admin role (síndico)
+      const adminRole = userRoles.find(r => r.role === 'admin' || r.role === 'master');
+      
+      if (!adminRole) {
+        setError("Erro: Você não tem permissão para aprovar moradores.");
+        setLoading(false);
+        return;
+      }
+      
+      const condominioId = adminRole.condominio_id;
       setUserCondominioId(condominioId);
 
-      // PROTEÇÃO: Carregar dados específicos do condomínio
-      const [todosCondominios, residenciasData] = await Promise.all([
-        Condominio.list(),
-        Residencia.filter({ condominio_id: condominioId })
-      ]);
+      // Load condominium data
+      const { data: condominio } = await supabase
+        .from('condominios')
+        .select('*')
+        .eq('id', condominioId)
+        .single();
       
-      const condominio = todosCondominios.find(c => c.id === condominioId);
       setCondominioAtual(condominio);
       
-      // PROTEÇÃO: Buscar APENAS moradores pendentes do condomínio ou sem condomínio atribuído
-      const pendentes = todosMoradores.filter(m => 
-        m.status === 'pendente' && 
-        (!m.condominio_id || m.condominio_id === 'pendente_definicao' || m.condominio_id === condominioId)
-      );
-
-      // VALIDAÇÃO: Garantir isolamento em residências
-      const residenciasValidadas = residenciasData.filter(r => r.condominio_id === condominioId);
+      // Load pending moradores for this condominium
+      const { data: moradores, error: moradoresError } = await supabase
+        .from('moradores')
+        .select(`
+          *,
+          profiles:user_id (nome, telefone, avatar_url),
+          unidades:unidade_id (numero, bloco_id)
+        `)
+        .eq('status', 'pendente');
       
-      console.log(`[SECURITY] Aprovação Moradores - Condomínio: ${condominioId}, Pendentes: ${pendentes.length}`);
+      if (moradoresError) {
+        console.error('Error loading moradores:', moradoresError);
+      }
       
-      setMoradoresPendentes(pendentes);
-      setResidencias(residenciasValidadas);
+      // Filter moradores that belong to this condominium's unidades
+      const { data: blocos } = await supabase
+        .from('blocos')
+        .select('id')
+        .eq('condominio_id', condominioId);
+      
+      const blocoIds = blocos?.map(b => b.id) || [];
+      
+      const { data: unidadesData } = await supabase
+        .from('unidades')
+        .select('*')
+        .in('bloco_id', blocoIds);
+      
+      setUnidades(unidadesData || []);
+      
+      // Filter pending moradores from this condominium
+      const unidadeIds = unidadesData?.map(u => u.id) || [];
+      const moradoresFiltrados = moradores?.filter(m => unidadeIds.includes(m.unidade_id)) || [];
+      
+      console.log(`[SECURITY] Aprovação Moradores - Condomínio: ${condominioId}, Pendentes: ${moradoresFiltrados.length}`);
+      
+      setMoradoresPendentes(moradoresFiltrados);
       
     } catch (err) {
       console.error("[SECURITY] Erro ao carregar dados de aprovação:", err);
@@ -106,89 +138,29 @@ export default function AprovacaoMoradoresPage() {
         return;
       }
 
-      const user = await User.me();
+      const { data: { user } } = await supabase.auth.getUser();
       
-      // PROTEÇÃO: Verificar limite de moradores do plano
-      const moradoresDoCondominio = await Morador.filter({ 
-        condominio_id: userCondominioId 
-      });
+      console.log(`[SECURITY] Aprovando morador ${moradorSelecionado.id} para condomínio ${userCondominioId}`);
       
-      // VALIDAÇÃO: Garantir isolamento
-      const moradoresValidados = moradoresDoCondominio.filter(m => m.condominio_id === userCondominioId);
+      // Update morador status to 'aprovado'
+      const { error: updateError } = await supabase
+        .from('moradores')
+        .update({ 
+          status: 'aprovado',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', moradorSelecionado.id);
       
-      const moradoresAtivosNoCondominio = moradoresValidados.filter(
-        m => m.tipo_usuario === 'morador' && m.status === 'aprovado'
-      ).length;
+      if (updateError) throw updateError;
 
-      const limite = condominioAtual.limite_moradores || 30;
-
-      if (moradoresAtivosNoCondominio >= limite) {
-        setError(`❌ Limite de moradores atingido! O plano permite ${limite} moradores ativos. Atualmente: ${moradoresAtivosNoCondominio}`);
-        setTimeout(() => setError(""), 7000);
-        return;
-      }
-
-      // SANITIZAÇÃO: Limpar dados recebidos
-      const dadosSanitizados = {
-        ...dadosAtualizados,
-        nome: String(dadosAtualizados.nome || '').trim().slice(0, 200),
-        email: String(dadosAtualizados.email || '').trim().toLowerCase().slice(0, 100),
-        telefone: String(dadosAtualizados.telefone || '').replace(/\D/g, '').slice(0, 11),
-        endereco: String(dadosAtualizados.endereco || '').trim().slice(0, 300),
-        complemento: String(dadosAtualizados.complemento || '').trim().slice(0, 200),
-        abreviacao: String(dadosAtualizados.abreviacao || '').trim().slice(0, 50)
-      };
-      
-      // PROTEÇÃO: Forçar condomínio do síndico
-      const dadosCompletos = {
-        ...dadosSanitizados,
-        condominio_id: userCondominioId,
-        status: "ativo",
-        data_aprovacao: new Date().toISOString(),
-        aprovado_por: user.email
-      };
-
-      // VALIDAÇÃO CRÍTICA: Garantir condomínio correto
-      if (dadosCompletos.condominio_id !== userCondominioId) {
-        throw new Error("SECURITY_BREACH: Tentativa de aprovar para outro condomínio");
-      }
-
-      // VALIDAÇÃO: Campos obrigatórios
-      if (!dadosCompletos.nome || dadosCompletos.nome.length < 3) {
-        setError("Nome inválido (mínimo 3 caracteres)");
-        return;
-      }
-
-      if (!dadosCompletos.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dadosCompletos.email)) {
-        setError("Email inválido");
-        return;
-      }
-
-      if (!dadosCompletos.telefone || dadosCompletos.telefone.length < 10) {
-        setError("Telefone inválido (mínimo 10 dígitos)");
-        return;
-      }
-      
-      console.log(`[SECURITY] Aprovando morador ${dadosCompletos.nome} para condomínio ${userCondominioId}`);
-      
-      await Morador.update(moradorSelecionado.id, dadosCompletos);
-      
-      // PROTEÇÃO: Atualizar contador com valores seguros
-      const novoMoradoresAtivos = Math.max(0, moradoresAtivosNoCondominio + 1);
-      const novoTotalUsuarios = Math.max(0, moradoresValidados.length + 1);
-      
-      await Condominio.update(userCondominioId, {
-        moradores_ativos: novoMoradoresAtivos,
-        total_usuarios: novoTotalUsuarios
-      });
-
-      await logAction('aprovar_morador', `Morador ${dadosCompletos.nome} aprovado`, {
+      await logAction('aprovar_morador', `Morador aprovado`, {
         condominio_id: userCondominioId,
         condominio_nome: condominioAtual?.nome,
-        dados_novos: { morador_id: moradorSelecionado.id, nome: dadosCompletos.nome }
+        dados_novos: { morador_id: moradorSelecionado.id }
       });
       
-      setSuccess(`✅ ${dadosCompletos.nome} foi aprovado com sucesso! O morador já pode fazer login no sistema.`);
+      const moradorNome = moradorSelecionado.profiles?.nome || 'Morador';
+      setSuccess(`✅ ${moradorNome} foi aprovado com sucesso! O morador já pode fazer login no sistema.`);
       setShowModal(false);
       setMoradorSelecionado(null);
       
@@ -197,37 +169,39 @@ export default function AprovacaoMoradoresPage() {
       setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
       console.error("[DATA_INTEGRITY] Erro ao aprovar morador:", err);
-      
-      if (err.message?.includes('SECURITY_BREACH')) {
-        setError("Erro de segurança crítico. Operação bloqueada.");
-      } else {
-        setError("Erro ao aprovar morador. Tente novamente.");
-      }
-      
+      setError("Erro ao aprovar morador. Tente novamente.");
       setTimeout(() => setError(""), 5000);
     }
   };
 
   const handleRecusar = async (morador) => {
+    const moradorNome = morador.profiles?.nome || 'este morador';
+    
     if (!window.confirm(
-      `Tem certeza que deseja RECUSAR o cadastro de ${morador.nome}?\n\n` +
-      `O cadastro será permanentemente deletado e o usuário não terá acesso ao sistema.`
+      `Tem certeza que deseja RECUSAR o cadastro de ${moradorNome}?\n\n` +
+      `O status será alterado para 'rejeitado' e o usuário não terá acesso ao sistema.`
     )) {
       return;
     }
     
     try {
-      console.log("🗑️ Deletando morador pendente:", morador.nome);
-      await Morador.delete(morador.id);
+      console.log("🗑️ Recusando morador pendente:", moradorNome);
+      
+      const { error: updateError } = await supabase
+        .from('moradores')
+        .update({ status: 'rejeitado' })
+        .eq('id', morador.id);
+      
+      if (updateError) throw updateError;
 
       // Registrar log
-      await logAction('recusar_morador', `Cadastro de ${morador.nome} recusado`, {
+      await logAction('recusar_morador', `Cadastro de ${moradorNome} recusado`, {
         condominio_id: userCondominioId,
         condominio_nome: condominioAtual?.nome,
-        dados_anteriores: { morador_id: morador.id, nome: morador.nome, email: morador.email }
+        dados_anteriores: { morador_id: morador.id }
       });
       
-      setSuccess(`Cadastro de ${morador.nome} foi recusado e removido.`);
+      setSuccess(`Cadastro de ${moradorNome} foi recusado.`);
       await loadData();
       setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
@@ -237,11 +211,11 @@ export default function AprovacaoMoradoresPage() {
     }
   };
 
-  const getResidenciaInfo = (residencia_id) => {
-    if (!residencia_id) return "Não definido";
-    const residencia = residencias.find(r => r.id === residencia_id);
-    if (!residencia) return "Não encontrada";
-    return `${residencia.identificador_principal}${residencia.complemento ? ', ' + residencia.complemento : ''}`;
+  const getUnidadeInfo = (morador) => {
+    if (!morador.unidades) return "Não definido";
+    const unidade = morador.unidades;
+    const blocoNome = unidade.blocos?.nome || '';
+    return `${blocoNome} - ${unidade.numero}`;
   };
 
   if (loading) {
@@ -324,7 +298,7 @@ export default function AprovacaoMoradoresPage() {
                           <UserIcon className="w-6 h-6 text-yellow-600" />
                         </div>
                         <div>
-                          <CardTitle className="text-xl">{morador.nome}</CardTitle>
+                          <CardTitle className="text-xl">{morador.profiles?.nome || 'Sem nome'}</CardTitle>
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
                               <Clock className="w-3 h-3 mr-1" />
@@ -355,28 +329,21 @@ export default function AprovacaoMoradoresPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-gray-500 mb-1 flex items-center gap-1">
-                          <Mail className="w-4 h-4" />
-                          Email
+                          <Home className="w-4 h-4" />
+                          Unidade
                         </p>
-                        <p className="font-medium">{morador.email}</p>
+                        <p className="font-medium">{getUnidadeInfo(morador)}</p>
                       </div>
                       <div>
                         <p className="text-sm text-gray-500 mb-1">Telefone</p>
-                        <p className="font-medium">{morador.telefone || "Não informado"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1 flex items-center gap-1">
-                          <Home className="w-4 h-4" />
-                          Residência
-                        </p>
-                        <p className="font-medium">{getResidenciaInfo(morador.residencia_id)}</p>
+                        <p className="font-medium">{morador.profiles?.telefone || "Não informado"}</p>
                       </div>
                       <div>
                         <p className="text-sm text-gray-500 mb-1 flex items-center gap-1">
                           <Hash className="w-4 h-4" />
-                          Abreviação
+                          Proprietário
                         </p>
-                        <p className="font-medium">{morador.apelido_endereco || "Não definido"}</p>
+                        <p className="font-medium">{morador.is_proprietario ? "Sim" : "Não"}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -389,7 +356,7 @@ export default function AprovacaoMoradoresPage() {
         {showModal && moradorSelecionado && (
           <AprovarMoradorModal
             morador={moradorSelecionado}
-            residencias={residencias}
+            unidades={unidades}
             onClose={() => {
               setShowModal(false);
               setMoradorSelecionado(null);

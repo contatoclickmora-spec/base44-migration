@@ -92,14 +92,31 @@ export const AuthProvider = ({ children }) => {
 
   const checkAppState = async () => {
     try {
+      console.log('[AUTH_CONTEXT] Iniciando checkAppState...');
       setIsLoadingAuth(true);
       setAuthError(null);
       
-      // Check current session
-      const { data: { session }, error } = await supabase.auth.getSession();
+      // Check current session with timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Session check timeout')), 10000)
+      );
+      
+      const sessionPromise = supabase.auth.getSession();
+      
+      let sessionResult;
+      try {
+        sessionResult = await Promise.race([sessionPromise, timeoutPromise]);
+      } catch (timeoutError) {
+        console.error('[AUTH_CONTEXT] Timeout ao verificar sessão');
+        setIsLoadingAuth(false);
+        setIsAuthenticated(false);
+        return;
+      }
+      
+      const { data: { session }, error } = sessionResult;
       
       if (error) {
-        console.error('Session check failed:', error);
+        console.error('[AUTH_CONTEXT] Session check failed:', error);
         setAuthError({
           type: 'unknown',
           message: error.message
@@ -109,17 +126,20 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (session?.user) {
+        console.log('[AUTH_CONTEXT] Usuário encontrado na sessão:', session.user.email);
         setUser(session.user);
         setIsAuthenticated(true);
         await checkUserStatus(session.user.id);
       } else {
+        console.log('[AUTH_CONTEXT] Nenhuma sessão ativa');
         setIsAuthenticated(false);
         setUserStatus(null);
       }
       
+      console.log('[AUTH_CONTEXT] checkAppState concluído');
       setIsLoadingAuth(false);
     } catch (error) {
-      console.error('Unexpected error:', error);
+      console.error('[AUTH_CONTEXT] Unexpected error:', error);
       setAuthError({
         type: 'unknown',
         message: error.message || 'An unexpected error occurred'
