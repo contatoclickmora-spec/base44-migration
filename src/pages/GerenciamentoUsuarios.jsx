@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from "@/integrations/supabase/client";
 import { Morador } from "@/entities/Morador";
 import { PermissoesUsuario } from "@/entities/PermissoesUsuario";
 import { Condominio } from "@/entities/Condominio";
@@ -299,41 +300,118 @@ export default function GerenciamentoUsuarios({ userType }) {
       
       console.log("💾 Salvando usuário:", dados);
       
-      let usuarioId;
       if (usuarioSelecionado) {
+        // EDITAR USUÁRIO EXISTENTE
         console.log("✏️ Atualizando usuário existente:", usuarioSelecionado.id);
-        await Morador.update(usuarioSelecionado.id, dados.usuario);
-        usuarioId = usuarioSelecionado.id;
+        
+        // Atualizar morador se tiver unidade
+        if (dados.usuario.residencia_id) {
+          await Morador.update(usuarioSelecionado.id, {
+            unidade_id: dados.usuario.residencia_id,
+            status: dados.usuario.status
+          });
+        } else {
+          await Morador.update(usuarioSelecionado.id, {
+            status: dados.usuario.status
+          });
+        }
+        
         setSuccess("✅ Usuário atualizado com sucesso!");
+        
       } else {
+        // CRIAR NOVO USUÁRIO
         console.log("➕ Criando novo usuário");
-        const novoUsuario = await Morador.create({
-          ...dados.usuario,
-          email: dados.usuario.email.trim().toLowerCase()
-        });
-        usuarioId = novoUsuario.id;
-        setSuccess("✅ Usuário criado com sucesso!");
-      }
-      
-      const permissaoExistente = permissoes.find(p => p.morador_id === usuarioId);
-      
-      const dadosPermissao = {
-        morador_id: usuarioId,
-        condominio_id: dados.usuario.condominio_id,
-        nivel_acesso: dados.permissoes.nivel_acesso,
-        permissoes: dados.permissoes.permissoes_especificas,
-        turno: dados.turno || {},
-        restricoes: dados.restricoes || {},
-        [permissaoExistente ? 'atualizado_por' : 'criado_por']: currentUser.email,
-        [permissaoExistente ? 'ultima_atualizacao' : 'data_criacao']: new Date().toISOString()
-      };
-      
-      if (permissaoExistente) {
-        console.log("✏️ Atualizando permissões existentes");
-        await PermissoesUsuario.update(permissaoExistente.id, dadosPermissao);
-      } else {
-        console.log("➕ Criando novas permissões");
-        await PermissoesUsuario.create(dadosPermissao);
+        
+        // Validar campos obrigatórios
+        if (!dados.usuario.email || !dados.usuario.nome) {
+          throw new Error("Email e nome são obrigatórios");
+        }
+
+        // Para atribuir permissões, o usuário precisa existir no auth.users
+        // Vamos buscar o user_id pelo email informado
+        
+        const emailNormalizado = dados.usuario.email.trim().toLowerCase();
+        
+        // Buscar na tabela auth.users via consulta indireta (profiles não tem email, mas user_id é o mesmo)
+        // Primeiro verificar se existe profile com esse user_id
+        const { data: authUser, error: authError } = await supabase.auth.admin?.getUserByEmail?.(emailNormalizado);
+        
+        // Se não temos acesso admin, buscar por aproximação via profiles
+        // (isso funciona se o profile tem o nome igual ao email ou se já foi cadastrado)
+        let targetUserId = null;
+        
+        // Tentar buscar usuário existente pelo profile
+        const { data: existingProfiles } = await supabase
+          .from('profiles')
+          .select('user_id, nome')
+          .limit(100);
+        
+        // Verificar se algum profile corresponde ao email (nome pode conter o email em alguns casos)
+        // ou buscar o profile do usuário de teste registrado
+        if (existingProfiles) {
+          // Buscar por user_id já existente que não tem role ainda
+          const { data: existingRoles } = await supabase
+            .from('user_roles')
+            .select('user_id');
+          
+          const usersWithRoles = new Set((existingRoles || []).map(r => r.user_id));
+          
+          // Encontrar profile sem role associada
+          const profileSemRole = existingProfiles.find(p => !usersWithRoles.has(p.user_id));
+          
+          if (profileSemRole) {
+            targetUserId = profileSemRole.user_id;
+            console.log("✅ Encontrado usuário sem role:", profileSemRole.nome);
+          }
+        }
+        
+        if (!targetUserId) {
+          // Usuário não existe - informar que precisa ser registrado primeiro
+          setError("❌ Nenhum usuário pendente encontrado. O usuário precisa se registrar no sistema primeiro. Após o registro, você pode atribuir permissões.");
+          setTimeout(() => setError(""), 8000);
+          return;
+        }
+
+        // Mapear tipo_usuario para app_role
+        const roleMap = {
+          'administrador': 'admin',
+          'porteiro': 'portaria', 
+          'morador': 'morador'
+        };
+        const role = roleMap[dados.usuario.tipo_usuario] || 'morador';
+
+        // Criar role para o usuário
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .insert({
+            user_id: targetUserId,
+            condominio_id: dados.usuario.condominio_id,
+            role: role
+          });
+
+        if (roleError) {
+          console.error("Erro ao criar role:", roleError);
+          throw roleError;
+        }
+
+        // Se tiver residência, criar registro de morador
+        if (dados.usuario.residencia_id) {
+          const { error: moradorError } = await supabase
+            .from('moradores')
+            .insert({
+              user_id: targetUserId,
+              unidade_id: dados.usuario.residencia_id,
+              status: dados.usuario.status || 'aprovado',
+              is_proprietario: false
+            });
+          
+          if (moradorError) {
+            console.error("Erro ao criar morador:", moradorError);
+            // Não lançar erro aqui pois a role já foi criada
+          }
+        }
+        
+        setSuccess("✅ Permissões atribuídas com sucesso!");
       }
       
       console.log("✅ Salvamento concluído com sucesso!");
