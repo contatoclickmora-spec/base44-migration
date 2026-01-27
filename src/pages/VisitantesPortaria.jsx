@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Visitante } from "@/entities/Visitante";
 import { Morador } from "@/entities/Morador";
-import { User } from "@/entities/User";
+import { getUserRole } from "@/components/utils/authUtils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,26 +54,24 @@ export default function VisitantesPortariaPage() {
       setLoading(true);
       setError('');
       
-      const user = await User.me();
+      // Use getUserRole for proper authentication
+      const role = await getUserRole();
       
-      if (!user || !user.email) {
+      if (!role || !role.isAuthenticated) {
         setError("Usuário não autenticado.");
         setLoading(false);
         return;
       }
 
-      const todosMoradores = await Morador.list();
-      const moradorLogado = todosMoradores.find(
-        m => m.email && m.email.trim().toLowerCase() === user.email.trim().toLowerCase()
-      );
+      // Get condominio_id from role (works for admin, portaria, morador)
+      const condominioId = role.condominioId || role.morador?.condominio_id;
 
-      if (!moradorLogado || !moradorLogado.condominio_id) {
+      if (!condominioId) {
         setError("Condomínio não identificado.");
         setLoading(false);
         return;
       }
 
-      const condominioId = moradorLogado.condominio_id;
       setUserCondominioId(condominioId);
 
       // PROTEÇÃO: Carregar APENAS moradores do condomínio
