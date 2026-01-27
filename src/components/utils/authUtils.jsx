@@ -161,10 +161,10 @@ async function loadUserRoleFromSupabase() {
         .from('moradores')
         .select(`
           *,
-          unidade:unidade_id (
+          unidades:unidade_id (
             id,
             numero,
-            bloco:bloco_id (
+            blocos:bloco_id (
               id,
               nome,
               condominio_id
@@ -172,7 +172,7 @@ async function loadUserRoleFromSupabase() {
           )
         `)
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       const role = {
         isAuthenticated: true,
@@ -189,7 +189,7 @@ async function loadUserRoleFromSupabase() {
         condominioId: adminRole?.condominio_id,
         morador: morador ? {
           ...morador,
-          condominio_id: morador.unidade?.bloco?.condominio_id || adminRole?.condominio_id,
+          condominio_id: morador.unidades?.blocos?.condominio_id || adminRole?.condominio_id,
           nome: profile?.nome
         } : {
           condominio_id: adminRole?.condominio_id,
@@ -238,10 +238,10 @@ async function loadUserRoleFromSupabase() {
         .from('moradores')
         .select(`
           *,
-          unidade:unidade_id (
+          unidades:unidade_id (
             id,
             numero,
-            bloco:bloco_id (
+            blocos:bloco_id (
               id,
               nome,
               condominio_id
@@ -249,7 +249,7 @@ async function loadUserRoleFromSupabase() {
           )
         `)
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       const role = {
         isAuthenticated: true,
@@ -263,10 +263,10 @@ async function loadUserRoleFromSupabase() {
         email: user.email,
         name: profile?.nome || user.email,
         isAdminMaster: false,
-        condominioId: morador?.unidade?.bloco?.condominio_id || moradorRole?.condominio_id,
+        condominioId: morador?.unidades?.blocos?.condominio_id || moradorRole?.condominio_id,
         morador: morador ? {
           ...morador,
-          condominio_id: morador.unidade?.bloco?.condominio_id || moradorRole?.condominio_id,
+          condominio_id: morador.unidades?.blocos?.condominio_id || moradorRole?.condominio_id,
           nome: profile?.nome
         } : null,
         profile: profile
