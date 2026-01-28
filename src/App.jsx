@@ -30,7 +30,7 @@ const LoadingSpinner = () => (
 
 // Protected route component that handles auth state race conditions
 const ProtectedRoute = ({ children }) => {
-  const { isLoadingAuth, isAuthenticated, isPendingApproval, authError, userStatus } = useAuth();
+  const { isLoadingAuth, isAuthenticated, isPendingApproval, authError, isAdminRole } = useAuth();
   
   // Show loading while auth state is being determined
   if (isLoadingAuth) {
@@ -42,9 +42,9 @@ const ProtectedRoute = ({ children }) => {
     return <Auth />;
   }
   
-  // Check for pending approval ONLY for morador role
-  // Users with admin roles (master, admin, portaria) bypass pending check
-  if (isPendingApproval && userStatus === 'pendente') {
+  // Check for pending approval - isPendingApproval already considers admin roles
+  // (admin roles are never pending even if userStatus is 'pendente')
+  if (isPendingApproval) {
     return <Navigate to="/AguardandoAprovacao" replace />;
   }
   
