@@ -50,19 +50,23 @@ export const AuthProvider = ({ children }) => {
 
   const checkUserStatus = async (userId) => {
     try {
-      // First check if user has any role (master, admin, portaria, morador)
+      console.log('[AUTH_CONTEXT] Verificando status do usuário:', userId);
+      
+      // First check if user has any role in user_roles table (master, admin, portaria)
       const { data: roles, error: rolesError } = await supabase
         .from('user_roles')
         .select('id, role, condominio_id')
         .eq('user_id', userId);
       
       if (rolesError) {
-        console.error('Error checking user roles:', rolesError);
+        console.error('[AUTH_CONTEXT] Error checking user roles:', rolesError);
       }
 
-      // If user has roles, they're approved (admin/master/portaria/morador)
+      // If user has ANY role in user_roles, they're approved
       if (roles && roles.length > 0) {
+        console.log('[AUTH_CONTEXT] Usuário tem role em user_roles:', roles[0].role);
         setUserStatus('aprovado');
+        setUserRole(roles[0].role);
         return;
       }
 
@@ -74,18 +78,24 @@ export const AuthProvider = ({ children }) => {
         .maybeSingle();
 
       if (moradorError) {
-        console.error('Error checking morador status:', moradorError);
+        console.error('[AUTH_CONTEXT] Error checking morador status:', moradorError);
       }
 
       if (morador) {
+        console.log('[AUTH_CONTEXT] Usuário é morador com status:', morador.status);
         // User is a morador, check their status
-        setUserStatus(morador.status || 'pendente');
+        const moradorStatus = morador.status || 'pendente';
+        setUserStatus(moradorStatus);
+        if (moradorStatus === 'aprovado') {
+          setUserRole('morador');
+        }
       } else {
+        console.log('[AUTH_CONTEXT] Usuário não tem role nem é morador - pendente');
         // User has no role and is not a morador = new user pending
         setUserStatus('pendente');
       }
     } catch (error) {
-      console.error('Error checking user status:', error);
+      console.error('[AUTH_CONTEXT] Error checking user status:', error);
       setUserStatus('pendente');
     }
   };

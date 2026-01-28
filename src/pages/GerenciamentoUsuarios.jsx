@@ -71,28 +71,101 @@ export default function GerenciamentoUsuarios({ userType }) {
         return;
       }
 
-      // CARREGAR TUDO EM PARALELO - muito mais rápido!
-      const [usuariosResult, rolesResult, condominiosResult, residenciasResult] = await Promise.allSettled([
+      // CARREGAR TUDO EM PARALELO - incluindo user_roles para pegar todos os usuários com roles
+      const [moradoresResult, rolesResult, condominiosResult, residenciasResult] = await Promise.allSettled([
         Morador.list(),
-        supabase.from('user_roles').select('*').order('created_at', { ascending: false }),
+        supabase.from('user_roles').select(`
+          id, role, user_id, condominio_id, created_at,
+          condominios:condominio_id (id, nome)
+        `).order('created_at', { ascending: false }),
         Condominio.list(),
         Residencia.list()
       ]);
 
-      const usuariosData = usuariosResult.status === 'fulfilled' ? usuariosResult.value : [];
+      const moradoresData = moradoresResult.status === 'fulfilled' ? moradoresResult.value : [];
       const rolesData = rolesResult.status === 'fulfilled' ? (rolesResult.value.data || []) : [];
       const condominiosData = condominiosResult.status === 'fulfilled' ? condominiosResult.value : [];
       const residenciasData = residenciasResult.status === 'fulfilled' ? residenciasResult.value : [];
 
+      // Get all unique user_ids from roles and moradores
+      const allUserIds = [
+        ...new Set([
+          ...rolesData.map(r => r.user_id),
+          ...moradoresData.map(m => m.user_id)
+        ])
+      ].filter(Boolean);
+
+      // Fetch profiles for all users
+      let profilesMap = {};
+      if (allUserIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, nome, telefone, cpf, avatar_url')
+          .in('user_id', allUserIds);
+        
+        (profiles || []).forEach(p => {
+          profilesMap[p.user_id] = p;
+        });
+      }
+
+      // Combine all users - from roles (master, admin, portaria) and moradores
+      const usuariosMap = new Map();
+
+      // Add users from roles first (they have explicit roles)
+      rolesData.forEach(role => {
+        const profile = profilesMap[role.user_id] || {};
+        const condominio = role.condominios || {};
+        const morador = moradoresData.find(m => m.user_id === role.user_id);
+        
+        // Map role to tipo_usuario
+        const roleToTipo = { master: 'admin_master', admin: 'administrador', portaria: 'porteiro', morador: 'morador' };
+        
+        if (!usuariosMap.has(role.user_id)) {
+          usuariosMap.set(role.user_id, {
+            id: morador?.id || role.id,
+            user_id: role.user_id,
+            nome: profile.nome || 'Sem nome',
+            telefone: profile.telefone || '',
+            cpf: profile.cpf || '',
+            avatar_url: profile.avatar_url || '',
+            email: '', // Profile doesn't store email
+            tipo_usuario: roleToTipo[role.role] || 'morador',
+            role: role.role,
+            status: morador?.status || 'aprovado',
+            condominio_id: role.condominio_id,
+            condominio_nome: condominio.nome || 'N/A',
+            apelido_endereco: morador?.apelido_endereco || '',
+            unidade_id: morador?.unidade_id || null,
+            created_at: role.created_at,
+            source: 'user_roles'
+          });
+        }
+      });
+
+      // Add moradores that don't have a role in user_roles
+      moradoresData.forEach(m => {
+        if (!usuariosMap.has(m.user_id)) {
+          usuariosMap.set(m.user_id, {
+            ...m,
+            tipo_usuario: 'morador',
+            role: 'morador',
+            source: 'moradores'
+          });
+        }
+      });
+
+      const combinedUsuarios = Array.from(usuariosMap.values());
+
       const duration = performance.now() - startTime;
       console.log(`✅ Dados carregados em ${duration.toFixed(0)}ms:`, {
-        usuarios: usuariosData.length,
+        moradores: moradoresData.length,
         roles: rolesData.length,
+        combined: combinedUsuarios.length,
         condominios: condominiosData.length,
         residencias: residenciasData.length
       });
 
-      setUsuarios(usuariosData);
+      setUsuarios(combinedUsuarios);
       setPermissoes(rolesData);
       setCondominios(condominiosData);
       setResidencias(residenciasData);
