@@ -177,7 +177,10 @@ export const AuthProvider = ({ children }) => {
     window.location.href = '/Auth';
   };
 
-  const isPendingApproval = userStatus === 'pendente';
+  // isPendingApproval is true ONLY for users without an admin role AND with pendente status
+  // Users with master, admin, or portaria roles are never pending
+  const isAdminRole = ['master', 'admin', 'portaria'].includes(userRole);
+  const isPendingApproval = userStatus === 'pendente' && !isAdminRole;
 
   return (
     <AuthContext.Provider value={{ 
@@ -188,6 +191,8 @@ export const AuthProvider = ({ children }) => {
       authError,
       appPublicSettings,
       userStatus,
+      userRole,
+      isAdminRole,
       isPendingApproval,
       logout,
       navigateToLogin,
