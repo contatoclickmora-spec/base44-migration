@@ -329,18 +329,88 @@ export default function GerenciamentoUsuarios({ userType }) {
       
       if (usuarioSelecionado) {
         // EDITAR USUÁRIO EXISTENTE
-        console.log("✏️ Atualizando usuário existente:", usuarioSelecionado.id);
+        console.log("✏️ Atualizando usuário existente:", usuarioSelecionado.id, usuarioSelecionado.user_id);
         
-        // Atualizar morador se tiver unidade
-        if (dados.usuario.residencia_id) {
-          await Morador.update(usuarioSelecionado.id, {
-            unidade_id: dados.usuario.residencia_id,
-            status: dados.usuario.status
-          });
+        // 1. Atualizar profile (nome, telefone, email)
+        if (usuarioSelecionado.user_id) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .update({
+              nome: dados.usuario.nome.trim(),
+              telefone: dados.usuario.telefone.trim(),
+              email: dados.usuario.email.trim()
+            })
+            .eq('user_id', usuarioSelecionado.user_id);
+          
+          if (profileError) {
+            console.error("Erro ao atualizar profile:", profileError);
+          } else {
+            console.log("✅ Profile atualizado");
+          }
+        }
+
+        // 2. Atualizar ou criar role (tipo de usuário e condomínio)
+        const roleMap = {
+          'administrador': 'admin',
+          'admin_master': 'master',
+          'porteiro': 'portaria', 
+          'morador': 'morador'
+        };
+        const newRole = roleMap[dados.usuario.tipo_usuario] || 'morador';
+        
+        // Verificar se já tem role neste condomínio
+        const { data: existingRole } = await supabase
+          .from('user_roles')
+          .select('id, role')
+          .eq('user_id', usuarioSelecionado.user_id)
+          .eq('condominio_id', dados.usuario.condominio_id)
+          .maybeSingle();
+        
+        if (existingRole) {
+          // Atualizar role existente se mudou
+          if (existingRole.role !== newRole) {
+            const { error: roleError } = await supabase
+              .from('user_roles')
+              .update({ role: newRole })
+              .eq('id', existingRole.id);
+            
+            if (roleError) {
+              console.error("Erro ao atualizar role:", roleError);
+            } else {
+              console.log("✅ Role atualizado para:", newRole);
+            }
+          }
         } else {
-          await Morador.update(usuarioSelecionado.id, {
-            status: dados.usuario.status
-          });
+          // Criar nova role
+          const { error: roleError } = await supabase
+            .from('user_roles')
+            .insert({
+              user_id: usuarioSelecionado.user_id,
+              condominio_id: dados.usuario.condominio_id,
+              role: newRole
+            });
+          
+          if (roleError) {
+            console.error("Erro ao criar role:", roleError);
+          } else {
+            console.log("✅ Role criado:", newRole);
+          }
+        }
+
+        // 3. Atualizar morador (status, residência) - se existir registro
+        if (usuarioSelecionado.id && usuarioSelecionado.source !== 'user_roles') {
+          const { error: moradorError } = await supabase
+            .from('moradores')
+            .update({
+              status: dados.usuario.status
+            })
+            .eq('id', usuarioSelecionado.id);
+          
+          if (moradorError) {
+            console.error("Erro ao atualizar morador:", moradorError);
+          } else {
+            console.log("✅ Status do morador atualizado");
+          }
         }
         
         setSuccess("✅ Usuário atualizado com sucesso!");
@@ -389,7 +459,23 @@ export default function GerenciamentoUsuarios({ userType }) {
           return;
         }
 
-        // Mapear tipo_usuario para app_role
+        // 1. Atualizar profile com os dados informados
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            nome: dados.usuario.nome.trim(),
+            telefone: dados.usuario.telefone.trim(),
+            email: emailNormalizado
+          })
+          .eq('user_id', targetUserId);
+        
+        if (profileError) {
+          console.error("Erro ao atualizar profile:", profileError);
+        } else {
+          console.log("✅ Profile atualizado com dados do novo usuário");
+        }
+
+        // 2. Mapear tipo_usuario para app_role
         const roleMap = {
           'administrador': 'admin',
           'porteiro': 'portaria', 
@@ -397,7 +483,7 @@ export default function GerenciamentoUsuarios({ userType }) {
         };
         const role = roleMap[dados.usuario.tipo_usuario] || 'morador';
 
-        // Criar role para o usuário
+        // 3. Criar role para o usuário
         const { error: roleError } = await supabase
           .from('user_roles')
           .insert({
@@ -410,25 +496,42 @@ export default function GerenciamentoUsuarios({ userType }) {
           console.error("Erro ao criar role:", roleError);
           throw roleError;
         }
+        console.log("✅ Role criado:", role);
 
-        // Se tiver residência, criar registro de morador
-        if (dados.usuario.residencia_id) {
-          const { error: moradorError } = await supabase
-            .from('moradores')
-            .insert({
-              user_id: targetUserId,
-              unidade_id: dados.usuario.residencia_id,
-              status: dados.usuario.status || 'aprovado',
-              is_proprietario: false
-            });
+        // 4. Se for morador ou tiver residência, criar registro na tabela moradores
+        if (dados.usuario.tipo_usuario === 'morador' || dados.usuario.residencia) {
+          // Primeiro, buscar ou criar uma unidade baseada na residência informada
+          // Por enquanto, vamos apenas criar o registro de morador sem unidade específica
+          // já que a residência agora é um campo de texto livre
           
-          if (moradorError) {
-            console.error("Erro ao criar morador:", moradorError);
-            // Não lançar erro aqui pois a role já foi criada
+          // Para criar morador, precisamos de uma unidade válida
+          // Vamos buscar a primeira unidade do condomínio selecionado
+          const { data: unidades } = await supabase
+            .from('unidades')
+            .select('id, blocos!inner(condominio_id)')
+            .eq('blocos.condominio_id', dados.usuario.condominio_id)
+            .limit(1);
+          
+          if (unidades && unidades.length > 0) {
+            const { error: moradorError } = await supabase
+              .from('moradores')
+              .insert({
+                user_id: targetUserId,
+                unidade_id: unidades[0].id,
+                status: dados.usuario.status || 'aprovado',
+                is_proprietario: false
+              });
+            
+            if (moradorError) {
+              console.error("Erro ao criar morador:", moradorError);
+              // Não lançar erro aqui pois a role já foi criada
+            } else {
+              console.log("✅ Registro de morador criado");
+            }
           }
         }
         
-        setSuccess("✅ Permissões atribuídas com sucesso!");
+        setSuccess("✅ Usuário cadastrado com sucesso!");
       }
       
       console.log("✅ Salvamento concluído com sucesso!");
