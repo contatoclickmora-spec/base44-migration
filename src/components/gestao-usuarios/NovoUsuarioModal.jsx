@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,7 +27,7 @@ export default function NovoUsuarioModal({ condominios, residencias, onClose, on
       tipo_usuario: "morador",
       status: "pendente", // Deve usar valores do enum resident_status: pendente, aprovado, rejeitado, inativo
       condominio_id: "",
-      residencia_id: "",
+      residencia: "", // Campo de texto para residência
       apelido_endereco: ""
     },
     permissoes: {
@@ -196,13 +196,16 @@ export default function NovoUsuarioModal({ condominios, residencias, onClose, on
     onSave(dados);
   };
 
-  const residenciasFiltradas = residencias.filter(r => r.condominio_id === dados.usuario.condominio_id);
+  // Residência agora é campo de texto livre
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl">Novo Usuário</DialogTitle>
+          <DialogDescription>
+            Preencha as informações abaixo para cadastrar um novo usuário. Todos os campos marcados com * são obrigatórios.
+          </DialogDescription>
         </DialogHeader>
 
         <Tabs value={tabAtiva} onValueChange={setTabAtiva}>
@@ -302,23 +305,13 @@ export default function NovoUsuarioModal({ condominios, residencias, onClose, on
               {dados.usuario.tipo_usuario !== 'porteiro' && (
                 <>
                   <div>
-                    <Label htmlFor="residencia">Residência</Label>
-                    <Select 
-                      value={dados.usuario.residencia_id} 
-                      onValueChange={(value) => handleUsuarioChange('residencia_id', value)}
-                      disabled={!dados.usuario.condominio_id}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {residenciasFiltradas.map(r => (
-                          <SelectItem key={r.id} value={r.id}>
-                            {r.identificador_principal}{r.complemento ? `, ${r.complemento}` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="residencia">Residência (Bloco/Apto)</Label>
+                    <Input
+                      id="residencia"
+                      value={dados.usuario.residencia}
+                      onChange={(e) => handleUsuarioChange('residencia', e.target.value)}
+                      placeholder="Ex: Bloco A - 103"
+                    />
                   </div>
 
                   <div>

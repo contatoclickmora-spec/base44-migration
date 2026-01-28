@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,7 +27,7 @@ export default function EditarUsuarioModal({ usuario, condominios, residencias, 
       tipo_usuario: usuario.tipo_usuario || "morador",
       status: usuario.status || "pendente", // Valores válidos: pendente, aprovado, rejeitado, inativo
       condominio_id: usuario.condominio_id || "",
-      residencia_id: usuario.residencia_id || "",
+      residencia: usuario.residencia || usuario.apelido_endereco || "", // Campo de texto para residência
       apelido_endereco: usuario.apelido_endereco || ""
     },
     permissoes: {
@@ -205,7 +205,7 @@ export default function EditarUsuarioModal({ usuario, condominios, residencias, 
     }
   };
 
-  const residenciasFiltradas = residencias.filter(r => r.condominio_id === dados.usuario.condominio_id);
+  // Residência agora é campo de texto livre - não precisa de filtro
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -222,6 +222,9 @@ export default function EditarUsuarioModal({ usuario, condominios, residencias, 
               {dados.usuario.status}
             </Badge>
           </DialogTitle>
+          <DialogDescription>
+            Edite as informações do usuário abaixo. Todos os campos marcados com * são obrigatórios.
+          </DialogDescription>
         </DialogHeader>
 
         <Tabs value={tabAtiva} onValueChange={setTabAtiva}>
@@ -341,23 +344,13 @@ export default function EditarUsuarioModal({ usuario, condominios, residencias, 
               {dados.usuario.tipo_usuario !== 'porteiro' && (
                 <>
                   <div>
-                    <Label htmlFor="residencia">Residência</Label>
-                    <Select 
-                      value={dados.usuario.residencia_id} 
-                      onValueChange={(value) => handleUsuarioChange('residencia_id', value)}
-                      disabled={!dados.usuario.condominio_id}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {residenciasFiltradas.map(r => (
-                          <SelectItem key={r.id} value={r.id}>
-                            {r.identificador_principal}{r.complemento ? `, ${r.complemento}` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="residencia">Residência (Bloco/Apto)</Label>
+                    <Input
+                      id="residencia"
+                      value={dados.usuario.residencia}
+                      onChange={(e) => handleUsuarioChange('residencia', e.target.value)}
+                      placeholder="Ex: Bloco A - 103"
+                    />
                   </div>
 
                   <div>
