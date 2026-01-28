@@ -598,6 +598,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_view_profile: {
+        Args: { _profile_user_id: string; _viewer_id: string }
+        Returns: boolean
+      }
       get_user_id_by_email: { Args: { _email: string }; Returns: string }
       has_any_role_in_condominio: {
         Args: { _condominio_id: string; _user_id: string }

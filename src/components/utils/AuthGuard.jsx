@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { getUserRoleSync } from './authUtils';
+import { getUserRoleSync, getUserRole } from './authUtils';
 import { Loader2 } from 'lucide-react';
 
 /**
  * AuthGuard - Protege páginas internas contra acesso não autenticado
- * Redireciona para login se usuário não estiver autenticado
+ * Redireciona para Auth se usuário não estiver autenticado
  */
 export default function AuthGuard({ children }) {
   const [checking, setChecking] = useState(true);
@@ -13,19 +13,25 @@ export default function AuthGuard({ children }) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const roleInfo = getUserRoleSync();
+        // Primeiro tenta cache síncrono
+        let roleInfo = getUserRoleSync();
+        
+        // Se não tem cache, busca assincronamente
+        if (!roleInfo) {
+          roleInfo = await getUserRole();
+        }
         
         if (!roleInfo || !roleInfo.isAuthenticated) {
-          // Não autenticado - redirecionar para login
-          console.log('[AUTH GUARD] Usuário não autenticado, redirecionando para login');
-          window.location.href = '/login';
+          // Não autenticado - redirecionar para Auth
+          console.log('[AUTH GUARD] Usuário não autenticado, redirecionando para Auth');
+          window.location.href = '/Auth';
           return;
         }
 
         setIsAuthenticated(true);
       } catch (error) {
         console.error('[AUTH GUARD] Erro ao verificar autenticação:', error);
-        window.location.href = '/login';
+        window.location.href = '/Auth';
       } finally {
         setChecking(false);
       }

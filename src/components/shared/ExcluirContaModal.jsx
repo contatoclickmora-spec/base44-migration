@@ -37,7 +37,7 @@ export default function ExcluirContaModal({ onClose, morador }) {
 
       // 5. Redirecionar para login com mensagem
       sessionStorage.setItem('conta_excluida', 'true');
-      window.location.href = '/login';
+      window.location.href = '/Auth';
 
     } catch (error) {
       console.error('[EXCLUIR CONTA] Erro ao excluir conta:', error);
