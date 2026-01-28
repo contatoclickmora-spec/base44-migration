@@ -153,18 +153,31 @@ export default function GestaoCondominios({ userType }) {
       
       // Now fetch profiles separately for each user_id
       const userIds = [...new Set((roles || []).map(r => r.user_id))];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, nome, email, telefone')
-        .in('user_id', userIds);
+      console.log("📋 User IDs para buscar profiles:", userIds);
+      
+      let profiles = [];
+      if (userIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profiles')
+          .select('user_id, nome, email, telefone')
+          .in('user_id', userIds);
+        
+        if (profilesError) {
+          console.error("❌ Erro ao carregar profiles:", profilesError);
+        } else {
+          profiles = profilesData || [];
+          console.log("📋 Profiles carregados:", profiles.length);
+        }
+      }
       
       // Merge profiles into roles
       const rolesWithProfiles = (roles || []).map(r => ({
         ...r,
-        profiles: profiles?.find(p => p.user_id === r.user_id) || null
+        profiles: profiles.find(p => p.user_id === r.user_id) || null
       }));
       
       console.log(`✅ Dados carregados: ${condos.length} condomínios, ${mors.length} moradores, ${rolesWithProfiles.length} roles`);
+      console.log("📋 Roles com profiles:", rolesWithProfiles.map(r => ({ role: r.role, nome: r.profiles?.nome, condo: r.condominio_id })));
       
       setCondominios(condos);
       setMoradores(mors);
