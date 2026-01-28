@@ -321,9 +321,26 @@ export default function AdminMaster({ userType }) { // userType prop is now unus
     setShowModalSindicos(true);
   };
 
-  // Mostrar tela vazia durante inicialização (sem "loading")
+  // Mostrar tela vazia durante inicialização (sem "loading") - com timeout de 5 segundos
+  useEffect(() => {
+    if (isInitializing) {
+      const timeout = setTimeout(() => {
+        console.log("⚠️ AdminMaster: Timeout de inicialização atingido, forçando exibição");
+        setIsInitializing(false);
+      }, 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [isInitializing]);
+
   if (isInitializing) {
-    return <div className="min-h-screen bg-gray-50" />;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Carregando painel...</p>
+        </div>
+      </div>
+    );
   }
 
   // Display access denied message if there was an error during access check

@@ -476,7 +476,12 @@ export default function GestaoCondominios({ userType }) {
   };
 
   if (loading) {
-    return <div className="p-8 text-center">Carregando...</div>;
+    return (
+      <div className="p-8 text-center">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-gray-600">Carregando...</p>
+      </div>
+    );
   }
 
   return (
