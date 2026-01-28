@@ -124,57 +124,76 @@ export default function GestaoCondominios({ userType }) {
   const [addingUserType, setAddingUserType] = useState(null);
   const [isCreateCondominioOpen, setIsCreateCondominioOpen] = useState(false);
 
-  // Função de carregamento de dados
+  // Função de carregamento de dados com timeout
   const loadData = async () => {
+    console.log("🚀 loadData iniciado");
+    
+    // Timeout de segurança para evitar loading infinito
+    const timeoutId = setTimeout(() => {
+      console.warn("⚠️ Timeout de carregamento atingido");
+      setLoading(false);
+      setRefreshing(false);
+    }, 10000);
+
     try {
       const isInitialLoad = loading;
       if (!isInitialLoad) setRefreshing(true);
       
       console.log("🔄 Carregando dados...");
       
-      const [condos, mors, res] = await Promise.all([
+      // Carregar dados em paralelo com tratamento individual de erros
+      const [condosResult, morsResult, resResult] = await Promise.allSettled([
         base44.entities.Condominio.list(), 
         base44.entities.Morador.list(),
         base44.entities.Residencia.list()
       ]);
       
+      const condos = condosResult.status === 'fulfilled' ? condosResult.value : [];
+      const mors = morsResult.status === 'fulfilled' ? morsResult.value : [];
+      const res = resResult.status === 'fulfilled' ? resResult.value : [];
+      
+      if (condosResult.status === 'rejected') console.error("❌ Erro ao carregar condominios:", condosResult.reason);
+      if (morsResult.status === 'rejected') console.error("❌ Erro ao carregar moradores:", morsResult.reason);
+      if (resResult.status === 'rejected') console.error("❌ Erro ao carregar residencias:", resResult.reason);
+      
       // Load user_roles WITH profiles to get all users with roles (including those not in moradores)
-      const { data: roles, error: rolesError } = await supabase
-        .from('user_roles')
-        .select(`
-          user_id, 
-          role, 
-          condominio_id
-        `);
-      
-      if (rolesError) {
-        console.error("❌ Erro ao carregar roles:", rolesError);
-      }
-      
-      // Now fetch profiles separately for each user_id
-      const userIds = [...new Set((roles || []).map(r => r.user_id))];
-      console.log("📋 User IDs para buscar profiles:", userIds);
-      
-      let profiles = [];
-      if (userIds.length > 0) {
-        const { data: profilesData, error: profilesError } = await supabase
-          .from('profiles')
-          .select('user_id, nome, email, telefone')
-          .in('user_id', userIds);
+      let rolesWithProfiles = [];
+      try {
+        const { data: roles, error: rolesError } = await supabase
+          .from('user_roles')
+          .select(`user_id, role, condominio_id`);
         
-        if (profilesError) {
-          console.error("❌ Erro ao carregar profiles:", profilesError);
+        if (rolesError) {
+          console.error("❌ Erro ao carregar roles:", rolesError);
         } else {
-          profiles = profilesData || [];
-          console.log("📋 Profiles carregados:", profiles.length);
+          // Now fetch profiles separately for each user_id
+          const userIds = [...new Set((roles || []).map(r => r.user_id))];
+          console.log("📋 User IDs para buscar profiles:", userIds);
+          
+          let profiles = [];
+          if (userIds.length > 0) {
+            const { data: profilesData, error: profilesError } = await supabase
+              .from('profiles')
+              .select('user_id, nome, email, telefone')
+              .in('user_id', userIds);
+            
+            if (profilesError) {
+              console.error("❌ Erro ao carregar profiles:", profilesError);
+            } else {
+              profiles = profilesData || [];
+              console.log("📋 Profiles carregados:", profiles.length);
+            }
+          }
+          
+          // Merge profiles into roles
+          rolesWithProfiles = (roles || []).map(r => ({
+            ...r,
+            profiles: profiles.find(p => p.user_id === r.user_id) || null
+          }));
         }
+      } catch (rolesErr) {
+        console.error("❌ Erro crítico ao carregar roles:", rolesErr);
       }
-      
-      // Merge profiles into roles
-      const rolesWithProfiles = (roles || []).map(r => ({
-        ...r,
-        profiles: profiles.find(p => p.user_id === r.user_id) || null
-      }));
       
       console.log(`✅ Dados carregados: ${condos.length} condomínios, ${mors.length} moradores, ${rolesWithProfiles.length} roles`);
       console.log("📋 Roles com profiles:", rolesWithProfiles.map(r => ({ role: r.role, nome: r.profiles?.nome, condo: r.condominio_id })));
@@ -196,21 +215,20 @@ export default function GestaoCondominios({ userType }) {
         }
       }
     } catch (err) {
-      console.error("❌ Erro ao carregar dados:", err);
+      console.error("❌ Erro crítico ao carregar dados:", err);
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
       setRefreshing(false);
+      console.log("✅ loadData finalizado");
     }
   };
 
   // Carregar dados APENAS uma vez quando o componente montar
   useEffect(() => {
-    const abortController = new AbortController();
     console.log("🚀 Componente GestaoCondominios montado");
     loadData();
-    return () => abortController.abort();
-     
-  }, []); // Array vazio = executa apenas uma vez, sem loadData para evitar loops
+  }, []); // Array vazio = executa apenas uma vez
 
   const filteredCondominios = condominios.filter(c =>
     c.nome.toLowerCase().includes(searchTerm.toLowerCase())
