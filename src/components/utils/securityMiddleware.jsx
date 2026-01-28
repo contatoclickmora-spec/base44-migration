@@ -6,50 +6,43 @@
  */
 
 import { base44 } from "@/api/base44Client";
+import { getUserRole } from "./authUtils";
 
 /**
  * Obtém o contexto de segurança do usuário autenticado
- * Retorna condominio_id e valida permissões
+ * Usa getUserRole que funciona corretamente com Supabase user_id
  */
 export async function getSecurityContext() {
   try {
-    const user = await base44.auth.me();
+    const roleData = await getUserRole();
     
-    if (!user || !user.email) {
+    if (!roleData || !roleData.userId) {
       throw new Error('SECURITY_BREACH: Usuário não autenticado');
     }
 
     // Admin Master tem acesso global (exceção controlada)
-    if (user.role === 'admin') {
+    if (roleData.role === 'admin_master' || roleData.role === 'master') {
       return {
-        userId: user.id,
-        userEmail: user.email,
+        userId: roleData.userId,
+        userEmail: roleData.email,
+        userName: roleData.name,
         userRole: 'admin_master',
-        condominioId: null, // Null = acesso global
+        condominioId: roleData.condominioId, // pode ser null para admin master global
         isAdminMaster: true
       };
     }
 
-    // Buscar morador vinculado ao email
-    const todosMoradores = await base44.entities.Morador.list();
-    const moradorLogado = todosMoradores.find(
-      m => m.email && m.email.trim().toLowerCase() === user.email.trim().toLowerCase()
-    );
-
-    if (!moradorLogado) {
-      throw new Error('SECURITY_BREACH: Morador não encontrado no sistema');
-    }
-
-    if (!moradorLogado.condominio_id) {
+    // Validar que tem condomínio vinculado
+    if (!roleData.condominioId) {
       throw new Error('SECURITY_BREACH: Condomínio não identificado');
     }
 
     return {
-      userId: moradorLogado.id,
-      userEmail: user.email,
-      userName: moradorLogado.nome,
-      userRole: moradorLogado.tipo_usuario,
-      condominioId: moradorLogado.condominio_id,
+      userId: roleData.moradorId || roleData.userId,
+      userEmail: roleData.email,
+      userName: roleData.name,
+      userRole: roleData.role,
+      condominioId: roleData.condominioId,
       isAdminMaster: false
     };
 

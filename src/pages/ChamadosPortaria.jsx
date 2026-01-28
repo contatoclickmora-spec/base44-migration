@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Chamado } from "@/entities/Chamado";
 import { Morador } from "@/entities/Morador";
-import { User } from "@/entities/User";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -9,6 +8,7 @@ import { Search, Loader2, AlertCircle, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useChamados } from "../components/utils/chamadosContext";
 import { base44 } from "@/api/base44Client";
+import { getCondominioContext } from "../components/utils/condominioContext";
 
 import ListaChamados from '../components/chamados/ListaChamados';
 import NovoChamado from '../components/chamados/NovoChamado';
@@ -42,46 +42,34 @@ export default function ChamadosPortaria({ userType }) {
         
         console.log('[CHAMADOS PORTARIA] 🔄 Iniciando carregamento...');
 
-        // 1. Carregar usuário autenticado
-        const user = await User.me();
+        // Usar getCondominioContext corrigido
+        const context = await getCondominioContext();
         if (!isMounted) return;
 
-        if (!user || !user.email) {
-          setError("Usuário não autenticado.");
-          setLoading(false);
-          return;
-        }
-
-        setCurrentUser(user);
-        console.log('[CHAMADOS PORTARIA] ✅ Usuário autenticado:', user.email);
-
-        // 2. Carregar todos os moradores
-        const todosMoradores = await Morador.list();
-        if (!isMounted) return;
-
-        const moradorLogado = todosMoradores.find(
-          m => m.email && m.email.trim().toLowerCase() === user.email.trim().toLowerCase()
-        );
-
-        if (!moradorLogado || !moradorLogado.condominio_id) {
+        if (!context || !context.condominioId) {
           setError("Condomínio não identificado.");
           setLoading(false);
           return;
         }
 
-        const condominioId = moradorLogado.condominio_id;
+        const condominioId = context.condominioId;
 
-        console.log('[CHAMADOS PORTARIA] ✅ Morador logado:', {
-          nome: moradorLogado.nome,
-          tipo: moradorLogado.tipo_usuario,
+        console.log('[CHAMADOS PORTARIA] ✅ Contexto obtido:', {
+          nome: context.userName,
+          tipo: context.userType,
           condominio: condominioId
         });
 
         if (!isMounted) return;
 
-        setMoradorLogado(moradorLogado);
+        setMoradorLogado({ 
+          id: context.userId, 
+          nome: context.userName, 
+          tipo_usuario: context.userType,
+          condominio_id: condominioId
+        });
         setUserCondominioId(condominioId);
-        setCurrentUserType(moradorLogado.tipo_usuario);
+        setCurrentUserType(context.userType);
 
         // PROTEÇÃO: Carregar APENAS moradores e chamados do condomínio
         const [moradoresDoCondominio, todosChamados] = await Promise.all([
