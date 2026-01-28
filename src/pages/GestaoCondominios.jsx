@@ -139,21 +139,37 @@ export default function GestaoCondominios({ userType }) {
       ]);
       
       // Load user_roles WITH profiles to get all users with roles (including those not in moradores)
-      const { data: roles } = await supabase
+      const { data: roles, error: rolesError } = await supabase
         .from('user_roles')
         .select(`
           user_id, 
           role, 
-          condominio_id,
-          profiles!inner(user_id, nome, email, telefone)
+          condominio_id
         `);
       
-      console.log(`✅ Dados carregados: ${condos.length} condomínios, ${mors.length} moradores, ${roles?.length || 0} roles`);
+      if (rolesError) {
+        console.error("❌ Erro ao carregar roles:", rolesError);
+      }
+      
+      // Now fetch profiles separately for each user_id
+      const userIds = [...new Set((roles || []).map(r => r.user_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, nome, email, telefone')
+        .in('user_id', userIds);
+      
+      // Merge profiles into roles
+      const rolesWithProfiles = (roles || []).map(r => ({
+        ...r,
+        profiles: profiles?.find(p => p.user_id === r.user_id) || null
+      }));
+      
+      console.log(`✅ Dados carregados: ${condos.length} condomínios, ${mors.length} moradores, ${rolesWithProfiles.length} roles`);
       
       setCondominios(condos);
       setMoradores(mors);
       setResidencias(res);
-      setUserRoles(roles || []);
+      setUserRoles(rolesWithProfiles);
       
       // Se ainda não tem condomínio selecionado, selecionar o primeiro
       if (!selectedCondominio && condos.length > 0) {
