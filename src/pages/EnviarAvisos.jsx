@@ -73,26 +73,17 @@ export default function EnviarAvisos() {
       setLoading(true);
       setError('');
       
-      const user = await User.me();
+      // Usar getCondominioContext corrigido
+      const { getCondominioContext } = await import('../components/utils/condominioContext');
+      const context = await getCondominioContext();
       
-      if (!user || !user.email) {
-        setError("Usuário não autenticado");
-        setLoading(false);
-        return;
-      }
-      
-      const todosMoradores = await Morador.list();
-      const moradorLogado = todosMoradores.find(
-        m => m.email && m.email.trim().toLowerCase() === user.email.trim().toLowerCase()
-      );
-
-      if (!moradorLogado || !moradorLogado.condominio_id) {
+      if (!context || !context.condominioId) {
         setError("Condomínio não identificado");
         setLoading(false);
         return;
       }
 
-      const condominioId = moradorLogado.condominio_id;
+      const condominioId = context.condominioId;
       setUserCondominioId(condominioId);
 
       // PROTEÇÃO: Carregar APENAS dados do condomínio do usuário

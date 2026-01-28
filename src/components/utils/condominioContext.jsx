@@ -1,8 +1,9 @@
-import { SessionCache, safeAuthCall, safeEntityCall } from "./apiCache";
+import { SessionCache } from "./apiCache";
+import { getUserRole } from "./authUtils";
 
 /**
  * SISTEMA MULTI-CONDOMÍNIO - Utilitário Central
- * Otimizado com retry automático e cache para evitar Network Errors
+ * Usa getUserRole() do authUtils que já funciona corretamente com user_id
  * 
  * Este módulo garante o isolamento completo de dados entre condomínios.
  * NUNCA acesse dados sem usar estas funções.
@@ -13,79 +14,62 @@ let _cachedUserType = null;
 let _cachedUserId = null;
 
 /**
- * Obtém o condomínio do usuário logado com retry automático
+ * Obtém o condomínio do usuário logado usando getUserRole do authUtils
  * Esta é a função PRINCIPAL para identificar o contexto do condomínio
  */
 export async function getCondominioContext() {
   try {
     // Verificar cache de sessão primeiro
     const cachedContext = SessionCache.get('condominio_context');
-    if (cachedContext) {
+    if (cachedContext && cachedContext.condominioId) {
       _cachedCondominioId = cachedContext.condominioId;
       _cachedUserType = cachedContext.userType;
       _cachedUserId = cachedContext.userId;
       return cachedContext;
     }
 
-    // Buscar usuário logado com retry
-    let user;
-    try {
-      user = await safeAuthCall('me');
-    } catch (err) {
-      throw new Error("Erro de conexão ao buscar usuário. Tente novamente.");
+    // Usar getUserRole que funciona corretamente com Supabase
+    const roleData = await getUserRole();
+
+    if (!roleData) {
+      throw new Error("Erro ao obter dados do usuário");
     }
 
-    if (!user || !user.email) {
-      throw new Error("Usuário não autenticado");
-    }
-
-    // Admin Master tem acesso global (mas deve ser tratado separadamente)
-    if (user.role === 'admin') {
+    // Admin Master tem acesso global
+    if (roleData.role === 'admin_master' || roleData.role === 'master') {
       const context = {
-        userId: user.email,
-        userEmail: user.email,
-        userName: user.full_name,
+        userId: roleData.userId,
+        userEmail: roleData.email,
+        userName: roleData.name,
         userType: 'admin_master',
-        condominioId: null,
+        condominioId: roleData.condominioId, // pode ser null para master global
         isAdminMaster: true
       };
       
       SessionCache.set('condominio_context', context, 10); // 10 minutos
+      _cachedCondominioId = context.condominioId;
+      _cachedUserType = context.userType;
+      _cachedUserId = context.userId;
       return context;
     }
 
-    // Buscar morador para obter condomínio com retry
-    let todosMoradores;
-    try {
-      todosMoradores = await safeEntityCall('Morador', 'list');
-    } catch (err) {
-      throw new Error("Erro de conexão ao buscar dados. Tente recarregar a página.");
-    }
-
-    const moradorLogado = todosMoradores.find(
-      m => m.email && m.email.trim().toLowerCase() === user.email.trim().toLowerCase()
-    );
-
-    if (!moradorLogado) {
-      throw new Error("Cadastro não encontrado no sistema");
-    }
-
-    if (!moradorLogado.condominio_id) {
+    // Usuário normal - precisa ter condominioId
+    if (!roleData.condominioId) {
       throw new Error("Usuário não está vinculado a nenhum condomínio");
     }
 
     // Cache do contexto
-    _cachedCondominioId = moradorLogado.condominio_id;
-    _cachedUserType = moradorLogado.tipo_usuario;
-    _cachedUserId = moradorLogado.id;
+    _cachedCondominioId = roleData.condominioId;
+    _cachedUserType = roleData.role;
+    _cachedUserId = roleData.userId;
 
     const context = {
-      userId: moradorLogado.id,
-      userEmail: user.email,
-      userName: user.full_name || moradorLogado.nome,
-      userType: moradorLogado.tipo_usuario,
-      condominioId: moradorLogado.condominio_id,
-      moradorStatus: moradorLogado.status,
+      userId: roleData.moradorId || roleData.userId,
+      userEmail: roleData.email,
+      userName: roleData.name,
+      userType: roleData.role,
+      condominioId: roleData.condominioId,
+      moradorStatus: roleData.moradorStatus,
       isAdminMaster: false
     };
 
@@ -94,6 +78,7 @@ export async function getCondominioContext() {
 
     return context;
   } catch (error) {
+    console.error('[CONDOMINIO_CONTEXT] Erro:', error);
     throw error;
   }
 }
