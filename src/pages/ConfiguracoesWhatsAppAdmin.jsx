@@ -36,7 +36,7 @@ export default function ConfiguracoesWhatsAppAdmin() {
       try {
         setLoading(true);
         const role = await getUserRole();
-        if (!role?.isAuthenticated) { window.location.href = "/login"; return; }
+        if (!role?.isAuthenticated) { window.location.href = "/Auth"; return; }
         if (role.userType !== "admin_master") { window.location.href = "/Dashboard"; return; }
         const [condos, cfgs] = await Promise.all([
           base44.entities.Condominio.list(),

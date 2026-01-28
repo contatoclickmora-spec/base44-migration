@@ -346,7 +346,7 @@ export default function Dashboard() {
           } catch (err) {
             if (abortController.signal.aborted) return;
             clearAuthCache();
-            window.location.href = '/login';
+            window.location.href = '/Auth';
             return;
           }
         } else {
@@ -356,7 +356,7 @@ export default function Dashboard() {
         if (abortController.signal.aborted) return;
 
         if (!role || !role.isAuthenticated) {
-          window.location.href = '/login';
+          window.location.href = '/Auth';
           return;
         }
 

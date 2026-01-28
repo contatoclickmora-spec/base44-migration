@@ -99,18 +99,10 @@ async function loadUserRoleFromSupabase() {
     const user = session.user;
     console.log('[AUTH] ✅ Usuário autenticado:', user.email);
 
-    // Buscar roles do usuário
+    // Buscar roles do usuário (sem join para evitar problemas de RLS)
     const { data: userRoles, error: rolesError } = await supabase
       .from('user_roles')
-      .select(`
-        id,
-        role,
-        condominio_id,
-        condominios:condominio_id (
-          id,
-          nome
-        )
-      `)
+      .select('id, role, condominio_id')
       .eq('user_id', user.id);
 
     if (rolesError) {
@@ -122,9 +114,9 @@ async function loadUserRoleFromSupabase() {
       .from('profiles')
       .select('*')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
-    if (profileError && profileError.code !== 'PGRST116') {
+    if (profileError) {
       console.error('[AUTH] ⚠️ Erro ao buscar perfil:', profileError);
     }
 
