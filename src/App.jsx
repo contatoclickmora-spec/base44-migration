@@ -28,6 +28,34 @@ const LoadingSpinner = () => (
   </div>
 );
 
+// Protected route component that handles auth state race conditions
+const ProtectedRoute = ({ children }) => {
+  const { isLoadingAuth, isAuthenticated, isPendingApproval, authError, userStatus } = useAuth();
+  
+  // Show loading while auth state is being determined
+  if (isLoadingAuth) {
+    return <LoadingSpinner />;
+  }
+  
+  // If not authenticated after loading, show Auth
+  if (!isAuthenticated) {
+    return <Auth />;
+  }
+  
+  // Check for pending approval ONLY for morador role
+  // Users with admin roles (master, admin, portaria) bypass pending check
+  if (isPendingApproval && userStatus === 'pendente') {
+    return <Navigate to="/AguardandoAprovacao" replace />;
+  }
+  
+  // Handle registration error
+  if (authError?.type === 'user_not_registered') {
+    return <UserNotRegisteredError />;
+  }
+  
+  return children;
+};
+
 const AuthenticatedApp = () => {
   const { isLoadingAuth, authError, isAuthenticated, isPendingApproval } = useAuth();
 
@@ -91,19 +119,11 @@ const AuthenticatedApp = () => {
             key={path}
             path={`/${path}`}
             element={
-              isLoadingAuth ? (
-                <LoadingSpinner />
-              ) : !isAuthenticated ? (
-                <Auth />
-              ) : isPendingApproval ? (
-                <Navigate to="/AguardandoAprovacao" replace />
-              ) : authError?.type === 'user_not_registered' ? (
-                <UserNotRegisteredError />
-              ) : (
+              <ProtectedRoute path={path}>
                 <LayoutWrapper currentPageName={path}>
                   <Page />
                 </LayoutWrapper>
-              )
+              </ProtectedRoute>
             }
           />
         ))}
