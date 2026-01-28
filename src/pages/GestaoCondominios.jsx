@@ -138,12 +138,17 @@ export default function GestaoCondominios({ userType }) {
         base44.entities.Residencia.list()
       ]);
       
-      // Load user_roles separately to get user types
+      // Load user_roles WITH profiles to get all users with roles (including those not in moradores)
       const { data: roles } = await supabase
         .from('user_roles')
-        .select('user_id, role, condominio_id');
+        .select(`
+          user_id, 
+          role, 
+          condominio_id,
+          profiles!inner(user_id, nome, email, telefone)
+        `);
       
-      console.log(`✅ Dados carregados: ${condos.length} condomínios, ${mors.length} moradores`);
+      console.log(`✅ Dados carregados: ${condos.length} condomínios, ${mors.length} moradores, ${roles?.length || 0} roles`);
       
       setCondominios(condos);
       setMoradores(mors);
@@ -188,16 +193,35 @@ export default function GestaoCondominios({ userType }) {
     return role?.role || 'morador';
   };
   
-  const moradoresDoCondominio = selectedCondominio
-    ? moradores.filter(m => m.condominio_id === selectedCondominio.id).map(m => ({
-        ...m,
-        tipo_usuario: getUserRoleInCondominio(m.user_id, selectedCondominio.id)
-      }))
+  // Build users list from user_roles (primary source) merged with moradores data
+  const usersDoCondominio = selectedCondominio
+    ? userRoles
+        .filter(r => r.condominio_id === selectedCondominio.id)
+        .map(r => {
+          // Find matching morador if exists
+          const morador = moradores.find(m => m.user_id === r.user_id);
+          // Get profile data from the joined profiles
+          const profile = r.profiles;
+          
+          return {
+            id: morador?.id || r.user_id,
+            user_id: r.user_id,
+            nome: profile?.nome || morador?.nome || 'Sem nome',
+            email: profile?.email || morador?.email || '',
+            telefone: profile?.telefone || morador?.telefone || '',
+            status: morador?.status || 'aprovado',
+            tipo_usuario: r.role,
+            condominio_id: r.condominio_id,
+            residencia_id: morador?.residencia_id,
+            // Keep morador reference for operations
+            _morador: morador
+          };
+        })
     : [];
 
-  const sindicos = moradoresDoCondominio.filter(m => m.tipo_usuario === 'admin');
-  const porteiros = moradoresDoCondominio.filter(m => m.tipo_usuario === 'portaria');
-  const moradoresNormais = moradoresDoCondominio.filter(m => m.tipo_usuario === 'morador');
+  const sindicos = usersDoCondominio.filter(u => u.tipo_usuario === 'admin');
+  const porteiros = usersDoCondominio.filter(u => u.tipo_usuario === 'portaria');
+  const moradoresNormais = usersDoCondominio.filter(u => u.tipo_usuario === 'morador');
 
   const handleToggleStatus = async (user, newStatus) => {
     // Mapear para valores válidos do enum resident_status
