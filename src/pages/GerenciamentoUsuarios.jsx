@@ -95,18 +95,31 @@ export default function GerenciamentoUsuarios({ userType }) {
         ])
       ].filter(Boolean);
 
-      // Fetch profiles for all users
+      // Fetch profiles for all users (agora inclui email)
       let profilesMap = {};
       if (allUserIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('user_id, nome, telefone, cpf, avatar_url')
+          .select('user_id, nome, telefone, cpf, avatar_url, email')
           .in('user_id', allUserIds);
         
         (profiles || []).forEach(p => {
           profilesMap[p.user_id] = p;
         });
       }
+
+      // Fetch emails from auth.users via RPC (para cada user_id, buscar o email)
+      // Como não podemos acessar auth.users diretamente, vamos usar uma abordagem diferente:
+      // O email pode ser obtido do usuário logado ou de uma função RPC adicional
+      // Por enquanto, vamos buscar emails que já estão no sistema via moradores que têm dados
+      
+      // Tentar buscar emails de moradores que têm essa informação
+      let emailsMap = {};
+      moradoresData.forEach(m => {
+        if (m.email && m.user_id) {
+          emailsMap[m.user_id] = m.email;
+        }
+      });
 
       // Combine all users - from roles (master, admin, portaria) and moradores
       const usuariosMap = new Map();
@@ -124,11 +137,11 @@ export default function GerenciamentoUsuarios({ userType }) {
           usuariosMap.set(role.user_id, {
             id: morador?.id || role.id,
             user_id: role.user_id,
-            nome: profile.nome || 'Sem nome',
-            telefone: profile.telefone || '',
-            cpf: profile.cpf || '',
-            avatar_url: profile.avatar_url || '',
-            email: '', // Profile doesn't store email
+            nome: profile.nome || morador?.nome || 'Sem nome',
+            telefone: profile.telefone || morador?.telefone || '',
+            cpf: profile.cpf || morador?.cpf || '',
+            avatar_url: profile.avatar_url || morador?.avatar_url || '',
+            email: profile.email || emailsMap[role.user_id] || morador?.email || '',
             tipo_usuario: roleToTipo[role.role] || 'morador',
             role: role.role,
             status: morador?.status || 'aprovado',
